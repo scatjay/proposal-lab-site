@@ -40,6 +40,7 @@
 (function () {
   var $ = function (i) { return document.getElementById(i); };
   var MODELS = ['gemini-2.5-flash-lite', 'gemini-3.1-flash-lite', 'gemini-3-flash-preview'];   /* 實際可用型號由楊老師的代理程式再限制一次 */
+  var DEFAULT_CAP = 1000;   /* 台幣，整個實驗期間累積；增加要楊老師核准（寫入 lab/spend/<代碼>/capNtd） */
   var ctx, P, S, G = {}, tab = 'home', timer = null;
   function show(id) { ['login', 'denied', 'naming', 'app', 'fatal'].forEach(function (k) { $(k).hidden = (k !== id); }); }
   function el(tag, attrs, kids) { var e = document.createElement(tag); Object.keys(attrs || {}).forEach(function (k) { if (k === 'text') e.textContent = attrs[k]; else if (k === 'class') e.className = attrs[k]; else e.setAttribute(k, attrs[k]); }); (kids || []).forEach(function (c) { e.appendChild(c); }); return e; }
@@ -147,8 +148,22 @@
     card.appendChild(field('助理的名字', S.jarvisName, function (v) { S.jarvisName = v; $('hi').textContent = (v || '助理') + ' 在這裡'; clearTimeout(pSet.t); pSet.t = setTimeout(saveSettings, 800); }, { id: 'sjn' }));
     var ml = el('label', { text: '場上角色用哪個 AI 型號', for: 'smd' }), ms = el('select', { id: 'smd' }); MODELS.forEach(function (m) { var o = el('option', { value: m, text: m }); if ((S.model || MODELS[0]) === m) o.selected = true; ms.appendChild(o); });
     ms.onchange = function () { S.model = ms.value; saveSettings().then(function () { ev('model'); }); }; card.appendChild(el('div', {}, [ml, ms]));
-    card.appendChild(el('p', { class: 'muted', text: '每天有用量上限，由楊老師的總後台設定；型號清單也由楊老師決定。' }));
-    p.appendChild(card); }
+    card.appendChild(el('p', { class: 'muted', text: '型號清單由楊老師決定。' }));
+    p.appendChild(card);
+    /* 累積花費與上限（由代理程式記帳寫入 lab/spend，你只能看不能改） */
+    var sp = el('div', { class: 'card' }); sp.appendChild(el('h2', { text: '累積花費' })); var body = el('div', { text: '讀取中…', class: 'muted' }); sp.appendChild(body); p.appendChild(sp);
+    ctx.db.get('lab/spend/' + ctx.code).then(function (x) {
+      x = x || {}; var used = Number(x.ntd) || 0, cap = (x.capNtd === undefined || x.capNtd === null) ? DEFAULT_CAP : Number(x.capNtd), pct = cap > 0 ? Math.min(100, Math.round(used / cap * 100)) : 100;
+      var full = used >= cap, near = !full && pct >= 80;
+      body.className = ''; body.textContent = '';
+      body.appendChild(el('div', { class: 'row' }, [el('strong', { text: 'NT$ ' + fmt(used) + ' ／ NT$ ' + fmt(cap), style: 'font-size:20px' }), el('span', { class: 'tag ' + (full ? 'warn' : (near ? '' : 'ok')), text: full ? '已用完，場上角色暫停' : (near ? '快用完了（' + pct + '%）' : '已用 ' + pct + '%') })]));
+      body.appendChild(el('div', { style: 'height:14px;margin:8px 0;border:var(--bw-s) solid var(--ink);border-radius:var(--r-pill);background:var(--panel);overflow:hidden' }, [el('div', { style: 'height:100%;width:' + pct + '%;background:' + (full ? 'var(--pop)' : 'var(--mint)') })]));
+      body.appendChild(el('div', { class: 'muted', text: '目前型號：' + (S.model || MODELS[0]) + '　場上對話 ' + fmt(x.calls || 0) + ' 次　token 入 ' + fmt(x.tokIn || 0) + '／出 ' + fmt(x.tokOut || 0) }));
+      body.appendChild(el('div', { class: 'muted', text: x.updatedAt ? '記帳更新：' + new Date(x.updatedAt).toLocaleString('zh-TW') : '還沒有任何花費紀錄。' }));
+      body.appendChild(el('p', { class: 'muted', text: '這是整個實驗期間的累積上限。需要增加，請向楊老師提出。' }));
+    }).catch(function (e) { body.textContent = '讀不到花費資料：' + (e && e.code || e); });
+  }
+  function fmt(n) { n = Number(n) || 0; return n.toLocaleString('zh-TW', { maximumFractionDigits: 2 }); }
 
   /* 啟動 */
   function boot(c) {
