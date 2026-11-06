@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="zh-Hant"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>提案室·總後台</title>
+<link rel="stylesheet" href="tokens.css?v=2"><link rel="stylesheet" href="lab.css?v=2">
+</head><body><div class="wrap">
+
+<section id="login" hidden>
+  <h1>提案室·總後台</h1>
+  <p class="muted">只有管理員帳號進得去。</p>
+  <div class="card"><div class="row"><button id="gBtn">用 Google 登入</button><span id="mockBox" hidden><input id="mockEmail" placeholder="（測試模式）信箱" style="width:220px"> <button id="mockGo" class="ghost">進入</button></span></div><p id="loginMsg" class="muted"></p></div>
+</section>
+
+<section id="denied" hidden>
+  <h1>這裡只給管理員</h1>
+  <div class="card"><p>目前登入的是 <code id="deniedMail"></code>，不是管理員帳號。</p><button id="deniedOut" class="ghost">換帳號</button></div>
+</section>
+
+<section id="app" hidden>
+  <div class="row" style="justify-content:space-between"><div><h1>提案室·總後台</h1><span class="tag" id="who"></span></div><div class="row"><button id="refresh" class="ghost">重新整理</button><button id="out" class="ghost">登出</button></div></div>
+
+  <div class="card"><h2>白名單</h2>
+    <div class="tbl"><table><thead><tr><th>信箱</th><th>代碼</th><th></th></tr></thead><tbody id="wlBody"></tbody></table></div>
+    <div class="grid" style="margin-top:12px"><div><label for="wlMail">新增信箱（Google 帳號）</label><input id="wlMail" placeholder="name@gmail.com"></div><div><label for="wlCode">代碼（英數與減號，3–20 字，不放姓名學號）</label><input id="wlCode" placeholder="lab-a02"></div></div>
+    <div class="row" style="margin-top:10px"><button id="wlAdd">加入白名單</button><span id="wlMsg" class="muted"></span></div>
+  </div>
+
+  <div class="card"><h2>學生狀況</h2>
+    <div class="tbl"><table><thead><tr><th>代碼</th><th>助理名</th><th>模型</th><th>角色／場景</th><th>進化（候選／接受／退回）</th><th>操作次數</th><th>最近更新</th></tr></thead><tbody id="uBody"></tbody></table></div>
+  </div>
+
+  <div class="card"><h2>用量（NPC 對話）</h2><p class="muted">由代理程式寫入 <code>lab/usage</code>。還沒接上時這裡是空的。</p><div class="tbl"><table><thead><tr><th>日期</th><th>代碼</th><th>次數</th><th>token（入／出）</th></tr></thead><tbody id="useBody"></tbody></table></div></div>
+</section>
+
+<section id="fatal" hidden><div class="card"><h2>出了點問題</h2><p id="fatalMsg" class="err"></p></div></section>
+</div>
+
+<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-database-compat.js"></script>
+<script src="lab.js?v=2"></script>
+<script>
+(function () {
+  var $ = function (i) { return document.getElementById(i); }, ctx;
+  function show(id) { ['login', 'denied', 'app', 'fatal'].forEach(function (k) { $(k).hidden = (k !== id); }); }
+  function td(t) { var c = document.createElement('td'); c.textContent = t; return c; }
+  function fatal(m) { $('fatalMsg').textContent = m; show('fatal'); }
+  function J(s) { try { return JSON.parse(s); } catch (e) { return null; } }
+
+  function load() {
+    Promise.all([ctx.db.get('lab/_wl'), ctx.db.get('lab/u'), ctx.db.get('lab/usage')]).then(function (r) {
+      var wl = r[0] || {}, u = r[1] || {}, use = r[2] || {};
+      var b = $('wlBody'); b.innerHTML = '';
+      Object.keys(wl).forEach(function (k) { var tr = document.createElement('tr'); tr.appendChild(td(k.replace(/,/g, '.'))); tr.appendChild(td(wl[k]));
+        var c = document.createElement('td'), d = document.createElement('button'); d.className = 'ghost'; d.textContent = '移除';
+        d.onclick = function () { if (d.dataset.arm !== '1') { d.dataset.arm = '1'; d.textContent = '再按一次確認'; setTimeout(function () { d.dataset.arm = ''; d.textContent = '移除'; }, 5000); return; }
+          ctx.db.remove('lab/_wl/' + k).then(load).catch(function (e) { $('wlMsg').textContent = '移除失敗：' + (e && e.code || e); }); };
+        c.appendChild(d); tr.appendChild(c); b.appendChild(tr); });
+      if (!Object.keys(wl).length) { var e0 = document.createElement('tr'); e0.appendChild(td('（尚無）')); b.appendChild(e0); }
+
+      var ub = $('uBody'); ub.innerHTML = '';
+      Object.keys(u).forEach(function (code) { var x = u[code] || {}, s = x.settings || {}, pr = J(x.project) || {}, gens = Object.keys(x.gens || {}).map(function (k) { return J(x.gens[k]) || {}; });
+        var cnt = function (v) { return gens.filter(function (g) { return g.v === v; }).length; };
+        var evs = Object.keys(x.events || {}), last = s.updatedAt ? new Date(s.updatedAt).toLocaleString('zh-TW') : '';
+        var tr = document.createElement('tr'); [code, s.jarvisName || '（未取名）', s.model || '', (pr.chars || []).length + ' ／ ' + (pr.scenes || []).length,
+          cnt('candidate') + ' ／ ' + cnt('accepted') + ' ／ ' + cnt('rejected'), String(evs.length), last].forEach(function (t) { tr.appendChild(td(t)); }); ub.appendChild(tr); });
+      if (!Object.keys(u).length) { var e1 = document.createElement('tr'); e1.appendChild(td('（尚無學生資料）')); ub.appendChild(e1); }
+
+      var sb = $('useBody'); sb.innerHTML = '';
+      Object.keys(use).sort().reverse().forEach(function (day) { var codes = use[day] || {}; Object.keys(codes).forEach(function (code) { var m = codes[code] || {}; var tr = document.createElement('tr');
+        [day, code, String(m.turns || 0), (m.tokIn || 0) + ' ／ ' + (m.tokOut || 0)].forEach(function (t) { tr.appendChild(td(t)); }); sb.appendChild(tr); }); });
+      if (!Object.keys(use).length) { var e2 = document.createElement('tr'); e2.appendChild(td('（尚無）')); sb.appendChild(e2); }
+    }).catch(function (e) { fatal('讀取失敗：' + (e && e.code || e)); });
+  }
+  $('wlAdd').onclick = function () {
+    var m = $('wlMail').value.trim().toLowerCase(), c = $('wlCode').value.trim().toLowerCase();
+    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(m)) { $('wlMsg').textContent = '信箱格式不對'; return; }
+    if (!/^[a-z0-9-]{3,20}$/.test(c)) { $('wlMsg').textContent = '代碼只能是英數與減號，3 到 20 字'; return; }
+    ctx.db.set('lab/_wl/' + LAB.ek(m), c).then(function () { $('wlMsg').textContent = '已加入'; $('wlMail').value = ''; $('wlCode').value = ''; load(); }).catch(function (e) { $('wlMsg').textContent = '加入失敗：' + (e && e.code || e); });
+  };
+  $('refresh').onclick = load; $('out').onclick = function () { LAB.signOut(); }; $('deniedOut').onclick = function () { LAB.signOut(); };
+  $('gBtn').onclick = function () { $('loginMsg').textContent = '登入中…'; var r = LAB.signIn(); if (r && r.catch) r.catch(function (e) { $('loginMsg').textContent = '登入沒有完成：' + (e && e.code || e); }); };
+  if (LAB.mock) { $('mockBox').hidden = false; $('gBtn').hidden = true; $('mockGo').onclick = function () { try { localStorage.setItem('labmock.email', $('mockEmail').value.trim().toLowerCase()); } catch (e) {} location.reload(); }; }
+  LAB.start({ onReady: function (c) { if (!c.isAdmin) { $('deniedMail').textContent = c.email; show('denied'); return; } ctx = c; $('who').textContent = c.email; show('app'); load(); },
+    onSignedOut: function () { show('login'); }, onDenied: function (m) { $('deniedMail').textContent = m; show('denied'); }, onError: fatal });
+})();
+</script></body></html>

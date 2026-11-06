@@ -1,0 +1,174 @@
+<!doctype html>
+<html lang="zh-Hant"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>提案室·實驗工坊</title>
+<link rel="stylesheet" href="tokens.css?v=2"><link rel="stylesheet" href="lab.css?v=2">
+</head><body><div class="wrap">
+
+<section id="login" hidden>
+  <h1>提案室·實驗工坊</h1>
+  <p class="muted">這是白名單開放的實驗空間。請用楊老師登記的個人 Google 帳號登入。</p>
+  <div class="card"><div class="row"><button id="gBtn">用 Google 登入</button><span id="mockBox" hidden><input id="mockEmail" placeholder="（測試模式）信箱" style="width:220px"> <button id="mockGo" class="ghost">進入</button></span></div><p id="loginMsg" class="muted"></p></div>
+</section>
+
+<section id="denied" hidden>
+  <h1>這個帳號還不在名單裡</h1>
+  <div class="card"><p>目前登入的是 <code id="deniedMail"></code>。請換成楊老師登記的那個 Google 帳號，或回信告訴楊老師你用的是哪個信箱。</p><button id="deniedOut" class="ghost">換帳號</button></div>
+</section>
+
+<section id="naming" hidden>
+  <h1>先幫你的助理取個名字</h1>
+  <p class="muted">這個助理會一直陪你做這個實驗。名字和個性都由你決定。</p>
+  <div class="card"><label for="nm">1. 它叫什麼名字？</label><input id="nm" maxlength="12" placeholder="例如：阿福、Nova（隨你取）">
+    <label for="ps">2. 它說話的個性？（可以先空白）</label><textarea id="ps" placeholder="例如：像毒舌但可靠的學姊；預設是簡潔、會先問再動手"></textarea>
+    <div class="row" style="margin-top:12px"><button id="nmGo">就叫這個名字</button><span id="nmErr" class="err"></span></div></div>
+</section>
+
+<section id="app" hidden>
+  <div class="row" style="justify-content:space-between"><div><h1 id="hi"></h1><span class="tag" id="who"></span> <span class="tag ok" id="saved">已儲存</span></div><button id="out" class="ghost">登出</button></div>
+  <div class="tabs" id="tabs"></div>
+  <div id="pane"></div>
+</section>
+
+<section id="fatal" hidden><div class="card"><h2>出了點問題</h2><p id="fatalMsg" class="err"></p></div></section>
+</div>
+
+<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-database-compat.js"></script>
+<script src="lab.js?v=2"></script>
+<script>
+(function () {
+  var $ = function (i) { return document.getElementById(i); };
+  var MODELS = ['gemini-2.5-flash-lite', 'gemini-3.1-flash-lite', 'gemini-3-flash-preview'];   /* 實際可用型號由楊老師的代理程式再限制一次 */
+  var ctx, P, S, G = {}, tab = 'home', timer = null;
+  function show(id) { ['login', 'denied', 'naming', 'app', 'fatal'].forEach(function (k) { $(k).hidden = (k !== id); }); }
+  function el(tag, attrs, kids) { var e = document.createElement(tag); Object.keys(attrs || {}).forEach(function (k) { if (k === 'text') e.textContent = attrs[k]; else if (k === 'class') e.className = attrs[k]; else e.setAttribute(k, attrs[k]); }); (kids || []).forEach(function (c) { e.appendChild(c); }); return e; }
+  function path(x) { return 'lab/u/' + ctx.code + '/' + x; }
+  function ev(kind) { var id = 'e' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5); ctx.db.set(path('events/' + id), JSON.stringify({ k: kind, t: Date.now() })).catch(function () {}); }
+  function blank() { return { v: 1, chars: [], scenes: [], story: { concept: '', playerRole: '', opening: '', goal: '', ending: '', gm: '', breakWall: false } }; }
+
+  /* 儲存 */
+  function mark(txt, cls) { var s = $('saved'); s.textContent = txt; s.className = 'tag ' + (cls || ''); }
+  function save() { mark('儲存中…', ''); clearTimeout(timer); timer = setTimeout(function () {
+    var s = JSON.stringify(P);
+    if (s.length > 80000) { mark('內容太長，未儲存', 'warn'); return; }
+    ctx.db.set(path('project'), s).then(function () { mark('已儲存', 'ok'); ev('save'); }).catch(function (e) { mark('儲存失敗', 'warn'); console.error(e); }); }, 900); }
+  function saveSettings() { var o = { model: S.model || MODELS[0], jarvisName: S.jarvisName || '', updatedAt: Date.now() }; return ctx.db.set(path('settings'), o); }
+
+  /* 欄位工具 */
+  function field(label, val, onInput, opts) { opts = opts || {}; var f = el(opts.multi ? 'textarea' : 'input', { id: opts.id || '' }); f.value = val || ''; if (opts.ph) f.placeholder = opts.ph;
+    f.addEventListener('input', function () { onInput(f.value); save(); }); var l = el('label', { text: label }); if (opts.id) l.setAttribute('for', opts.id); var w = el('div', {}, [l, f]); if (opts.hint) w.appendChild(el('div', { class: 'muted', text: opts.hint })); return w; }
+  function lines(a) { return (a || []).join('\n'); } function unlines(s) { return s.split('\n').map(function (x) { return x.trim(); }).filter(Boolean); }
+
+  /* 分頁 */
+  var TABS = [['home', '你在這裡'], ['chars', '角色'], ['scenes', '場景'], ['story', '故事'], ['evo', '進化'], ['set', '設定']];
+  function renderTabs() { var t = $('tabs'); t.innerHTML = ''; TABS.forEach(function (x) { var b = el('button', { text: x[1], class: x[0] === tab ? 'on' : 'ghost' }); b.onclick = function () { tab = x[0]; renderTabs(); renderPane(); }; t.appendChild(b); }); }
+  function renderPane() { var p = $('pane'); p.innerHTML = ''; ({ home: pHome, chars: pChars, scenes: pScenes, story: pStory, evo: pEvo, set: pSet })[tab](p); }
+
+  function checks() { var c = P.chars, st = P.story, out = [];
+    out.push([c.length >= 1, '至少一個角色']);
+    out.push([c.some(function (x) { return (x.bio || '').length >= 40 && (x.speech || '').length >= 20; }), '角色有寫夠深（簡介 40 字、說話方式 20 字以上）']);
+    out.push([P.scenes.length >= 1 && P.scenes.some(function (s) { return s.rooms && s.rooms.length; }), '至少一個場景和一個房間']);
+    out.push([(st.concept || '').length >= 10, '故事的高概念（一句話）']);
+    out.push([(st.goal || '').length > 0 && (st.ending || '').length > 0, '故事有目標和結局']);
+    return out; }
+  function pHome(p) {
+    var cs = checks(), done = cs.filter(function (x) { return x[0]; }).length, nxt = cs.filter(function (x) { return !x[0]; })[0];
+    var c1 = el('div', { class: 'card' }, [el('span', { class: 'tag', text: '今天的你' }), el('h2', { text: '你現在是這個實驗的設計師' }),
+      el('p', { text: '這一頁告訴你：你在哪、能做什麼、下一步是什麼。' })]);
+    var list = el('ul'); cs.forEach(function (x) { list.appendChild(el('li', { text: (x[0] ? '✓ ' : '○ ') + x[1] })); });
+    var c2 = el('div', { class: 'card' }, [el('h2', { text: '完成度 ' + done + ' / ' + cs.length }), list,
+      el('p', { class: 'muted', text: nxt ? '下一步：' + nxt[1] : '都完成了，可以請楊老師來看，或讓角色再深一點。' })]);
+    var line = '我的助理叫「' + (S.jarvisName || '') + '」，個性：' + (S.persona || '簡潔、會先問再動手') + '。請存入 jarvis/memory/identity.json。';
+    var cp = el('button', { class: 'ghost', text: '複製' }); cp.onclick = function () { try { navigator.clipboard.writeText(line); } catch (e) {} };
+    var c3 = el('div', { class: 'card' }, [el('h2', { text: '讓助理接手' }), el('p', { text: '把下面這一行貼給你的助理（Claude CLI），它就知道自己叫什麼：' }), el('p', {}, [el('code', { text: line })]), cp]);
+    p.appendChild(c1); p.appendChild(c2); p.appendChild(c3); }
+
+  function pChars(p) {
+    p.appendChild(el('p', { class: 'muted', text: '先從一兩個角色開始。設定寫得越具體，角色越不會呆：他是誰、怎麼說話、知道什麼、不知道什麼。（最多 3 個）' }));
+    P.chars.forEach(function (c, i) { var card = el('div', { class: 'card' }); card.appendChild(el('h2', { text: '角色 ' + (i + 1) + (c.name ? '：' + c.name : '') }));
+      card.appendChild(field('名字（化名）', c.name, function (v) { c.name = v; }, { id: 'cn' + i }));
+      card.appendChild(field('他是誰（簡介）', c.bio, function (v) { c.bio = v; }, { multi: 1, id: 'cb' + i, hint: '建議 40 字以上：年齡、身分、這個場景裡他在做什麼。' }));
+      card.appendChild(field('說話方式', c.speech, function (v) { c.speech = v; }, { multi: 1, id: 'cs' + i, hint: '句子長短、口頭禪、情緒。' }));
+      card.appendChild(field('他知道什麼（一行一件）', lines(c.knows), function (v) { c.knows = unlines(v); }, { multi: 1, id: 'ck' + i }));
+      card.appendChild(field('他不知道什麼（一行一件）', lines(c.unknown), function (v) { c.unknown = unlines(v); }, { multi: 1, id: 'cu' + i }));
+      card.appendChild(field('他的規則（一行一條，例如：每次最多兩句）', lines(c.rules), function (v) { c.rules = unlines(v); }, { multi: 1, id: 'cr' + i }));
+      var d = el('button', { class: 'ghost', text: '刪除這個角色' }); d.onclick = function () { P.chars.splice(i, 1); save(); renderPane(); }; card.appendChild(el('div', { style: 'margin-top:10px' }, [d])); p.appendChild(card); });
+    if (P.chars.length < 3) { var a = el('button', { text: '＋ 新增角色' }); a.onclick = function () { P.chars.push({ name: '', bio: '', speech: '', knows: [], unknown: [], rules: [] }); save(); ev('addChar'); renderPane(); }; p.appendChild(a); } }
+
+  function pScenes(p) {
+    p.appendChild(el('p', { class: 'muted', text: '場景是故事發生的地方。每個場景有一句氣氛和最多 3 個房間。' }));
+    P.scenes.forEach(function (s, i) { var card = el('div', { class: 'card' }); s.rooms = s.rooms || [];
+      card.appendChild(field('場景名稱', s.name, function (v) { s.name = v; }, { id: 'sn' + i }));
+      card.appendChild(field('一句話氣氛', s.mood, function (v) { s.mood = v; }, { id: 'sm' + i }));
+      s.rooms.forEach(function (r, j) { card.appendChild(field('房間 ' + (j + 1) + ' 名稱', r.name, function (v) { r.name = v; }, { id: 'rn' + i + '_' + j })); card.appendChild(field('房間 ' + (j + 1) + ' 說明（有什麼可以調查）', r.desc, function (v) { r.desc = v; }, { multi: 1, id: 'rd' + i + '_' + j })); });
+      var row = el('div', { class: 'row', style: 'margin-top:10px' });
+      if (s.rooms.length < 3) { var ar = el('button', { class: 'ghost', text: '＋ 房間' }); ar.onclick = function () { s.rooms.push({ name: '', desc: '' }); save(); renderPane(); }; row.appendChild(ar); }
+      var d = el('button', { class: 'ghost', text: '刪除場景' }); d.onclick = function () { P.scenes.splice(i, 1); save(); renderPane(); }; row.appendChild(d); card.appendChild(row); p.appendChild(card); });
+    if (P.scenes.length < 2) { var a = el('button', { text: '＋ 新增場景' }); a.onclick = function () { P.scenes.push({ name: '', mood: '', rooms: [{ name: '', desc: '' }] }); save(); ev('addScene'); renderPane(); }; p.appendChild(a); } }
+
+  function pStory(p) { var st = P.story, card = el('div', { class: 'card' });
+    card.appendChild(field('高概念（一句話，讓人想看下去）', st.concept, function (v) { st.concept = v; }, { id: 'stc' }));
+    card.appendChild(field('玩家的身分', st.playerRole, function (v) { st.playerRole = v; }, { id: 'stp' }));
+    card.appendChild(field('開場事件', st.opening, function (v) { st.opening = v; }, { multi: 1, id: 'sto' }));
+    card.appendChild(field('目標', st.goal, function (v) { st.goal = v; }, { id: 'stg' }));
+    card.appendChild(field('結局（怎樣算結束）', st.ending, function (v) { st.ending = v; }, { multi: 1, id: 'ste' }));
+    var gl = el('label', { text: '主持人（GM）：由哪個角色引導故事？', for: 'stgm' }), gs = el('select', { id: 'stgm' }); gs.appendChild(el('option', { value: '', text: '（不設主持人）' }));
+    P.chars.forEach(function (c, i) { var o = el('option', { value: String(i), text: c.name || ('角色 ' + (i + 1)) }); if (String(st.gm) === String(i)) o.selected = true; gs.appendChild(o); });
+    gs.onchange = function () { st.gm = gs.value; save(); }; card.appendChild(el('div', {}, [gl, gs]));
+    var bw = el('input', { type: 'checkbox', id: 'stbw' }); bw.checked = !!st.breakWall; bw.style.width = 'auto'; bw.onchange = function () { st.breakWall = bw.checked; save(); };
+    card.appendChild(el('div', { class: 'row', style: 'margin-top:12px' }, [bw, el('label', { text: '打破第四面牆（玩家其實是外面的設計師，可以進去改變角色或環境）', for: 'stbw', style: 'margin:0' })]));
+    p.appendChild(card); }
+
+  /* 進化：每一代的修改前後、分數與理由；候選版本由她接受或退回 */
+  function fv(x) { return Array.isArray(x) ? x.join('\n') : String(x == null ? '' : x); }
+  function gensList() { return Object.keys(G).map(function (k) { var o; try { o = JSON.parse(G[k]); } catch (e) { return null; } if (o) o._id = k; return o; }).filter(Boolean).sort(function (a, b) { return (b.g || 0) - (a.g || 0); }); }
+  function setVerdict(g, v) { g.v = v; var o = {}; Object.keys(g).forEach(function (k) { if (k !== '_id') o[k] = g[k]; }); G[g._id] = JSON.stringify(o); return ctx.db.set(path('gens/' + g._id), G[g._id]); }
+  var VL = { candidate: ['等你決定', 'warn'], accepted: ['你接受了', 'ok'], rejected: ['你退回了', ''] };
+  function pEvo(p) {
+    var gs = gensList();
+    p.appendChild(el('div', { class: 'card' }, [el('h2', { text: '角色怎麼一代一代變聰明' }),
+      el('p', { text: '系統會根據你的標註，替角色提出修改版本（候選）。每一代都記在這裡：改了哪個欄位、改之前和改之後、為什麼、測驗分數。你接受才會生效，退回的也會留下來，並成為下一代的參考。' }),
+      el('p', { class: 'muted', text: '新的候選版本必須通過兩關：舊的好例子一題都不能退步，而且至少一題變好；碰到紅線（洩漏設定、扮演真人、醫療建議）一律不過。' })]));
+    if (!gs.length) { p.appendChild(el('div', { class: 'card' }, [el('h2', { text: '還沒有進化紀錄' }), el('p', { text: '累積約 10 題你的標註（「像／不像」「卡住」）之後，系統才會開始提出候選。在那之前，把角色的設定寫得具體一點，效果最大。' })])); return; }
+    gs.forEach(function (g) { var vl = VL[g.v] || ['', ''], c = P.chars[g.ci] || {}, card = el('div', { class: 'card' });
+      card.appendChild(el('div', { class: 'row' }, [el('h2', { text: '第 ' + g.g + ' 代', style: 'margin:0' }), el('span', { class: 'tag ' + vl[1], text: vl[0] }), el('span', { class: 'muted', text: (c.name || '角色 ' + ((g.ci || 0) + 1)) + '　' + (g.f || '') + '　' + (g.t ? new Date(g.t).toLocaleString('zh-TW') : '') })]));
+      if (g.why) card.appendChild(el('p', { text: '為什麼改：' + g.why }));
+      var s = g.s || {}; card.appendChild(el('p', { class: 'muted', text: '測驗：好例子 ' + ((s.gold || [0, 0])[0]) + ' / ' + ((s.gold || [0, 0])[1]) + ' 題維持或變好　紅線違反 ' + (s.redline || 0) + ' 次' }));
+      card.appendChild(el('div', { class: 'grid' }, [el('div', {}, [el('label', { text: '改之前' }), el('pre', { text: fv(g.b), style: 'white-space:pre-wrap;margin:0;background:var(--soft-r);padding:8px;border-radius:var(--r-s)' })]),
+        el('div', {}, [el('label', { text: '改之後' }), el('pre', { text: fv(g.a), style: 'white-space:pre-wrap;margin:0;background:var(--soft-g);padding:8px;border-radius:var(--r-s)' })])]));
+      if (g.v === 'candidate') { var ok = el('button', { text: '接受這一代' }), no = el('button', { class: 'ghost', text: '退回' });
+        ok.onclick = function () { var ch = P.chars[g.ci]; if (ch && g.f) { ch[g.f] = Array.isArray(ch[g.f]) ? unlines(fv(g.a)) : fv(g.a); } setVerdict(g, 'accepted').then(function () { save(); ev('gen-accept'); renderPane(); }); };
+        no.onclick = function () { setVerdict(g, 'rejected').then(function () { ev('gen-reject'); renderPane(); }); };
+        card.appendChild(el('div', { class: 'row', style: 'margin-top:10px' }, [ok, no])); }
+      p.appendChild(card); }); }
+
+  function pSet(p) { var card = el('div', { class: 'card' });
+    card.appendChild(field('助理的名字', S.jarvisName, function (v) { S.jarvisName = v; $('hi').textContent = (v || '助理') + ' 在這裡'; clearTimeout(pSet.t); pSet.t = setTimeout(saveSettings, 800); }, { id: 'sjn' }));
+    var ml = el('label', { text: '場上角色用哪個 AI 型號', for: 'smd' }), ms = el('select', { id: 'smd' }); MODELS.forEach(function (m) { var o = el('option', { value: m, text: m }); if ((S.model || MODELS[0]) === m) o.selected = true; ms.appendChild(o); });
+    ms.onchange = function () { S.model = ms.value; saveSettings().then(function () { ev('model'); }); }; card.appendChild(el('div', {}, [ml, ms]));
+    card.appendChild(el('p', { class: 'muted', text: '每天有用量上限，由楊老師的總後台設定；型號清單也由楊老師決定。' }));
+    p.appendChild(card); }
+
+  /* 啟動 */
+  function boot(c) {
+    ctx = c; if (!ctx.code) { ctx.code = ctx.isAdmin ? 'lab-admin-preview' : null; }
+    $('who').textContent = ctx.email;
+    Promise.all([ctx.db.get(path('settings')), ctx.db.get(path('project')), ctx.db.get(path('gens'))]).then(function (r) {
+      S = r[0] || {}; G = r[2] || {}; try { P = r[1] ? JSON.parse(r[1]) : blank(); } catch (e) { P = blank(); }
+      P.chars = P.chars || []; P.scenes = P.scenes || []; P.story = P.story || blank().story;
+      if (!S.jarvisName) { show('naming'); return; } enter();
+    }).catch(function (e) { fatal('讀取你的資料失敗：' + (e && e.code || e)); });
+  }
+  function enter() { $('hi').textContent = S.jarvisName + ' 在這裡'; show('app'); renderTabs(); renderPane(); ev('open'); }
+  function fatal(m) { $('fatalMsg').textContent = m; show('fatal'); }
+
+  $('nmGo').onclick = function () { var n = $('nm').value.trim(); if (!n) { $('nmErr').textContent = '先取個名字喔'; return; }
+    S = { jarvisName: n, model: MODELS[0], persona: $('ps').value.trim() }; saveSettings().then(function () { ev('named'); enter(); }).catch(function (e) { $('nmErr').textContent = '儲存失敗：' + (e && e.code || e); }); };
+  $('out').onclick = function () { LAB.signOut(); }; $('deniedOut').onclick = function () { LAB.signOut(); };
+  $('gBtn').onclick = function () { $('loginMsg').textContent = '登入中…（會跳出 Google 的視窗）'; var r = LAB.signIn(); if (r && r.catch) r.catch(function (e) { $('loginMsg').textContent = '登入沒有完成：' + (e && e.code || e); }); };
+  if (LAB.mock) { $('mockBox').hidden = false; $('gBtn').hidden = true; $('mockGo').onclick = function () { try { localStorage.setItem('labmock.email', $('mockEmail').value.trim().toLowerCase()); } catch (e) {} location.reload(); }; }
+  LAB.start({ onReady: boot, onSignedOut: function () { show('login'); },
+    onDenied: function (m) { $('deniedMail').textContent = m; show('denied'); }, onError: fatal });
+})();
+</script></body></html>

@@ -1,0 +1,21 @@
+*{box-sizing:border-box}html,body{margin:0;min-height:100%}
+body{background:var(--bg);background-image:radial-gradient(var(--dot) 1.5px,transparent 1.5px);background-size:18px 18px;color:var(--fg);font:var(--fs-3)/1.6 "Noto Sans TC","Microsoft JhengHei",sans-serif}
+button,input,select,textarea{font:inherit;color:inherit}
+button{background:var(--yellow);color:var(--ink-fixed);border:var(--bw) solid var(--ink);border-radius:var(--r-m);padding:6px 14px;font-weight:700;cursor:pointer;box-shadow:var(--sh) var(--sh) 0 var(--ink)}
+button:active{transform:translate(var(--press),var(--press));box-shadow:none}
+button.ghost{background:var(--panel);color:var(--fg)}button.on{background:var(--ink);color:var(--bg)}
+button:disabled{opacity:.45;cursor:not-allowed}
+input,select,textarea{background:var(--panel);border:var(--bw) solid var(--ink);border-radius:var(--r-m);padding:6px var(--s2);width:100%}
+textarea{resize:vertical;min-height:70px}label{display:block;font-weight:700;margin:10px 0 2px}
+:focus-visible{outline:var(--bw) solid var(--pop);outline-offset:2px}
+.wrap{max-width:820px;margin:0 auto;padding:var(--s5) max(var(--s4),env(safe-area-inset-left)) 64px}
+.card{background:var(--panel);border:var(--bw) solid var(--ink);border-radius:var(--r-m);padding:14px var(--s4);margin:var(--s3) 0;box-shadow:var(--sh-l) var(--sh-l) 0 var(--ink)}
+h1{font-size:var(--fs-5);line-height:1.15;margin:0 0 6px;font-weight:900}h2{font-size:var(--fs-4);margin:0 0 var(--s2);font-weight:900}
+.muted{color:var(--muted)}.row{display:flex;gap:var(--s2);flex-wrap:wrap;align-items:center}.row>*{min-width:0}
+.tag{display:inline-block;font-size:var(--fs-1);font-weight:700;padding:0 var(--s2);border:var(--bw-s) solid var(--ink);border-radius:var(--r-pill);background:var(--soft-y)}
+.tag.ok{background:var(--soft-g)}.tag.warn{background:var(--soft-r)}
+.tabs{display:flex;gap:var(--s2);flex-wrap:wrap;margin:var(--s3) 0}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:var(--s3)}@media(max-width:640px){.grid{grid-template-columns:1fr}}
+table{width:100%;border-collapse:collapse}th,td{border-bottom:var(--bw-s) solid var(--line);padding:6px var(--s2);text-align:left;vertical-align:top}
+th{font-size:var(--fs-1);color:var(--muted)}code{background:var(--code);padding:1px 6px;border-radius:var(--r-s);word-break:break-all}
+.err{color:var(--bad);font-weight:700}[hidden]{display:none!important}.tbl{overflow-x:auto}
