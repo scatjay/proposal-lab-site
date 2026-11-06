@@ -36,7 +36,7 @@
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-database-compat.js"></script>
-<script src="lab.js?v=3"></script>
+<script src="lab.js?v=4"></script>
 <script src="starter.js?v=1"></script>
 <script>
 (function () {
@@ -247,10 +247,23 @@
     var box = el('div', { class: 'card', id: 'chbox' }, [el('div', { class: 'muted', text: '讀取對話…' })]); p.appendChild(box);
     var inp = el('textarea', { id: 'chm', placeholder: '對' + (P.chars[chatCi].name || '他') + '說的話（最多 300 字）' }), go = el('button', { text: '送出', id: 'chgo' });
     var msg = el('span', { class: 'muted', id: 'chmsg' });
-    p.appendChild(el('div', { class: 'card' }, [el('label', { text: '你說', for: 'chm' }), inp, el('div', { class: 'row', style: 'margin-top:8px' }, [go, msg])]));
+    var endB = el('button', { class: 'ghost', text: '結束這一場並記住', id: 'chend' });
+    p.appendChild(el('div', { class: 'card' }, [el('label', { text: '你說', for: 'chm' }), inp, el('div', { class: 'row', style: 'margin-top:8px' }, [go, endB, msg])]));
+    var memBox = el('div', { class: 'card', id: 'chmem' }); p.appendChild(memBox);
+    var curS = 1;
+    function sesOf(reqs, mem) { var mx = 1, ended = false; Object.keys(reqs).forEach(function (k) { var q = J(reqs[k]) || {}; if (Number(q.c || 0) === chatCi) mx = Math.max(mx, Number(q.s || 1)); });
+      Object.keys(mem).forEach(function (k) { var m = J(mem[k]) || {}; if (Number(m.c || 0) === chatCi) mx = Math.max(mx, Number(m.s || 1)); });
+      Object.keys(mem).forEach(function (k) { var m = J(mem[k]) || {}; if (Number(m.c || 0) === chatCi && Number(m.s || 1) === mx) ended = true; }); return ended ? mx + 1 : mx; }
+    function renderMem(mem) { memBox.innerHTML = ''; memBox.appendChild(el('h2', { text: (P.chars[chatCi].name || '他') + ' 的記憶' }));
+      var ids = Object.keys(mem).filter(function (k) { var m = J(mem[k]) || {}; return Number(m.c || 0) === chatCi && !m.x; }).sort();
+      if (!ids.length) { memBox.appendChild(el('p', { class: 'muted', text: '還沒有記憶。聊完一場按「結束這一場並記住」，他下次見面就會記得這一場的重點；你可以隨時叫他忘掉。' })); return; }
+      ids.forEach(function (k) { var m = J(mem[k]) || {}, row = el('div', { class: 'row', style: 'margin:6px 0;align-items:flex-start' });
+        row.appendChild(el('span', { class: 'tag', text: '第 ' + (m.s || 1) + ' 場' })); row.appendChild(el('span', { text: m.p ? '整理中…' : (m.text || ''), style: 'flex:1;min-width:0' }));
+        var fg = el('button', { class: 'ghost', text: '忘掉這段' }); fg.onclick = function () { ctx.db.set(path('mem/' + k), JSON.stringify({ c: chatCi, s: m.s || 1, x: 1, t: Date.now() })).then(function () { ev('mem-forget'); load(); }); }; row.appendChild(fg); memBox.appendChild(row); }); }
+    endB.onclick = function () { if (endB.disabled) return; ctx.db.set(path('mem/m' + Date.now()), JSON.stringify({ c: chatCi, s: curS, p: 1, t: Date.now() })).then(function () { ev('mem-save'); load(); }).catch(function () { $('chmsg').textContent = '記憶沒存成功'; }); };
     function render(reqs, outs, marks) {
       box.innerHTML = ''; var ids = Object.keys(reqs).sort(), n = 0;
-      ids.forEach(function (id) { var rq = J(reqs[id]) || {}; if (Number(rq.c || 0) !== chatCi) return; n++;
+      ids.forEach(function (id) { var rq = J(reqs[id]) || {}; if (Number(rq.c || 0) !== chatCi || Number(rq.s || 1) !== curS) return; n++;
         box.appendChild(el('div', { style: 'margin:6px 0;text-align:right' }, [el('span', { class: 'tag', text: '你：' + (rq.m || '') })]));
         var ou = J(outs[id]); var m = J(marks[id]);
         if (!ou) { box.appendChild(el('div', { class: 'muted', text: (P.chars[chatCi].name || '角色') + ' 想一下…' })); return; }
@@ -260,20 +273,20 @@
         [['like', '像'], ['unlike', '不像'], ['stuck', '卡住']].forEach(function (x) { var bt = el('button', { text: x[1], class: (m && m.v === x[0]) ? '' : 'ghost' }); bt.onclick = function () { markIt(id, x[0], note.value); }; row.appendChild(bt); });
         var note = el('input', { placeholder: '哪裡不像／卡在哪（一句話，可不寫）', 'aria-label': '備註' }); note.value = (m && m.n) || ''; row.appendChild(note);
         b.appendChild(row); if (m) b.appendChild(el('div', { class: 'muted', text: '已標：' + ({ like: '像', unlike: '不像', stuck: '卡住' })[m.v] })); box.appendChild(b); });
-      if (!n) box.appendChild(el('div', { class: 'muted', text: '還沒聊過。先說一句吧。' }));
+      if (!n) box.appendChild(el('div', { class: 'muted', text: curS > 1 ? '新的一場開始了，他記得前幾場的重點。先說一句吧。' : '還沒聊過。先說一句吧。' })); endB.disabled = !n;
       box.scrollTop = box.scrollHeight;
     }
     function markIt(id, v, note) { var o = JSON.stringify({ o: id, c: chatCi, v: v, n: String(note || '').slice(0, 200), t: Date.now() });
       ctx.db.set(path('marks/' + id), o).then(function () { ev('mark-' + v); FL.mark++; load(); renderGuide(); }).catch(function () { $('chmsg').textContent = '標註沒存成功'; }); }
-    function load() { Promise.all([ctx.db.get(path('req')), ctx.db.get(path('out')), ctx.db.get(path('marks')), ctx.db.get('lab/spend/' + ctx.code)]).then(function (r) {
-      var sp = r[3] || {}, cap = (sp.capNtd === undefined || sp.capNtd === null) ? DEFAULT_CAP : Number(sp.capNtd), used = Number(sp.ntd) || 0;
+    function load() { Promise.all([ctx.db.get(path('req')), ctx.db.get(path('out')), ctx.db.get(path('marks')), ctx.db.get('lab/spend/' + ctx.code), ctx.db.get(path('mem'))]).then(function (r) {
+      var mem = r[4] || {}; curS = sesOf(r[0] || {}, mem); var sp = r[3] || {}, cap = (sp.capNtd === undefined || sp.capNtd === null) ? DEFAULT_CAP : Number(sp.capNtd), used = Number(sp.ntd) || 0;
       info.textContent = '目前型號：' + (S.model || MODELS[0]) + '　累積 NT$ ' + fmt(used) + ' ／ ' + fmt(cap); go.disabled = used >= cap; if (used >= cap) $('chmsg').textContent = '額度用完了，需要增加請向楊老師提出。';
-      render(r[0] || {}, r[1] || {}, r[2] || {}); var pend = Object.keys(r[0] || {}).some(function (k) { return !(r[1] || {})[k]; });
+      render(r[0] || {}, r[1] || {}, r[2] || {}); renderMem(mem); var pend = Object.keys(r[0] || {}).some(function (k) { return !(r[1] || {})[k]; }) || Object.keys(mem).some(function (k) { return (J(mem[k]) || {}).p; });
       clearTimeout(chatPoll); if (pend && tab === 'chat') chatPoll = setTimeout(load, 1500);
     }).catch(function (e) { box.textContent = '讀不到對話：' + (e && e.code || e); }); }
     go.onclick = function () { var m = inp.value.trim(); if (!m) { $('chmsg').textContent = '先打一句話'; return; } if (m.length > 300) { $('chmsg').textContent = '太長了，300 字內'; return; }
       var id = 'r' + Date.now(); go.disabled = true; $('chmsg').textContent = '';
-      ctx.db.set(path('req/' + id), JSON.stringify({ c: chatCi, m: m, t: Date.now() })).then(function () { inp.value = ''; ev('chat'); FL.chat++; go.disabled = false; load(); renderGuide(); }).catch(function (e) { go.disabled = false; $('chmsg').textContent = '送出失敗：' + (e && e.code || e); }); };
+      ctx.db.set(path('req/' + id), JSON.stringify({ c: chatCi, s: curS, m: m, t: Date.now() })).then(function () { inp.value = ''; ev('chat'); FL.chat++; go.disabled = false; load(); renderGuide(); }).catch(function (e) { go.disabled = false; $('chmsg').textContent = '送出失敗：' + (e && e.code || e); }); };
     load();
   }
   function J(s) { try { return JSON.parse(s); } catch (e) { return null; } }

@@ -27,6 +27,8 @@
     var rawSet = D.set;
     D.set = function (p, v) { var r = rawSet(p, v), m = /^lab\/u\/([^/]+)\/req\/([^/]+)$/.exec(p);
       if (m && v) { setTimeout(function () { var q = {}; try { q = JSON.parse(v); } catch (e) {} rawSet('lab/u/' + m[1] + '/out/' + m[2], JSON.stringify({ text: '（模擬回覆）我聽到你說「' + String(q.m || '').slice(0, 20) + '」。', m: 'mock', t: Date.now() })); }, 700); }
+      var mm = /^lab\/u\/([^/]+)\/mem\/([^/]+)$/.exec(p);
+      if (mm && v) { var o = {}; try { o = JSON.parse(v); } catch (e) {} if (o.p) setTimeout(function () { rawSet(p, JSON.stringify({ c: o.c, s: o.s, t: Date.now(), text: '（模擬記憶）上一場我們聊了幾句，他問到我哪裡不舒服。', n: 1 })); }, 700); }
       return r; };
   } else {
     D.get = function (p) { return db.ref(p).once('value').then(function (s) { return s.val(); }); };
