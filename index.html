@@ -61,7 +61,7 @@
 
   /* 欄位工具 */
   function field(label, val, onInput, opts) { opts = opts || {}; var f = el(opts.multi ? 'textarea' : 'input', { id: opts.id || '' }); f.value = val || ''; if (opts.ph) f.placeholder = opts.ph;
-    f.addEventListener('input', function () { onInput(f.value); save(); }); var l = el('label', { text: label }); if (opts.id) l.setAttribute('for', opts.id); var w = el('div', {}, [l, f]); if (opts.hint) w.appendChild(el('div', { class: 'muted', text: opts.hint })); return w; }
+    f.addEventListener('input', function () { onInput(f.value); save(); depthRefresh(); }); var l = el('label', { text: label }); if (opts.id) l.setAttribute('for', opts.id); var w = el('div', {}, [l, f]); if (opts.hint) w.appendChild(el('div', { class: 'muted', text: opts.hint })); return w; }
   function lines(a) { return (a || []).join('\n'); } function unlines(s) { return s.split('\n').map(function (x) { return x.trim(); }).filter(Boolean); }
 
   /* 分頁 */
@@ -155,7 +155,7 @@
     var info = el('div', { class: 'muted', style: 'margin-top:6px' });
     function draw() { puck.style.left = (co.x * 100) + '%'; puck.style.top = (co.y * 100) + '%'; puck.style.display = set ? '' : 'none'; var q = QUADS[quadOf(co)];
       info.textContent = set ? '現在在「' + q[0] + '」：' + q[1] + '。格內位置只代表程度，不是分類。' : '還沒設定。點一下座標圖，系統會照這個調整他說話的長短與重心。'; }
-    function put(x, y) { co.x = Math.max(0, Math.min(1, x)); co.y = Math.max(0, Math.min(1, y)); co.x = Math.round(co.x * 100) / 100; co.y = Math.round(co.y * 100) / 100; set = true; c.coord = { x: co.x, y: co.y }; draw(); save(); }
+    function put(x, y) { co.x = Math.max(0, Math.min(1, x)); co.y = Math.max(0, Math.min(1, y)); co.x = Math.round(co.x * 100) / 100; co.y = Math.round(co.y * 100) / 100; set = true; c.coord = { x: co.x, y: co.y }; draw(); save(); depthRefresh(); }
     function at(e) { var r = pad.getBoundingClientRect(); put((e.clientX - r.left) / r.width, (e.clientY - r.top) / r.height); }
     var down = false; pad.addEventListener('pointerdown', function (e) { down = true; try { pad.setPointerCapture(e.pointerId); } catch (x) {} at(e); });
     pad.addEventListener('pointermove', function (e) { if (down) at(e); }); pad.addEventListener('pointerup', function () { down = false; });
@@ -163,9 +163,40 @@
     wrap.appendChild(el('div', { class: 'muted', style: 'display:flex;justify-content:space-between', }, [el('span', { text: '← 話少' }), el('span', { text: '話多 →' })]));
     wrap.appendChild(pad); wrap.appendChild(el('div', { class: 'muted', text: '↑ 先在意感受　　↓ 先在意道理' })); wrap.appendChild(info); draw(); return wrap; }
 
+
+  /* 設定深度：討論記錄裡的結論——角色「呆」多半是設定太短。用規則算，不經 AI；沒達標的項目附一句怎麼補。 */
+  function depthOf(c) {
+    var it = [
+      [10, (c.name || '').trim().length > 0, '有名字（化名）', '先取一個名字'],
+      [15, (c.bio || '').length >= 40, '簡介 40 字以上', '寫年齡、身分、這個場景裡他正在做什麼'],
+      [10, (c.bio || '').length >= 80, '簡介 80 字以上（更完整）', '加上他最近發生的一件事，角色會更有層次'],
+      [15, (c.speech || '').length >= 20, '說話方式 20 字以上', '寫句子長短、口頭禪、情緒，最好舉一句他會說的話'],
+      [15, (c.knows || []).length >= 3, '他知道至少 3 件事', '多寫幾件他確定知道的事，角色才有東西可聊'],
+      [10, (c.unknown || []).length >= 1, '寫了他不知道的事', '寫一件他不知道的事，才不會什麼都答得出來'],
+      [15, (c.rules || []).length >= 2, '至少 2 條規則', '例如：每次最多兩句、被問到某件事要猶豫'],
+      [10, !!c.coord, '設了性格座標', '在座標圖點一下，決定話多話少、重感受或重道理']
+    ];
+    var score = 0; it.forEach(function (x) { if (x[1]) score += x[0]; });
+    return { score: score, items: it };
+  }
+  function depthCard(c) {
+    var box = el('div', { class: 'card', style: 'background:var(--soft-y);margin:8px 0' });
+    function draw() { var d = depthOf(c), lvl = d.score >= 85 ? ['夠深', 'ok'] : d.score >= 60 ? ['可以了，還能再深', ''] : ['還淺，角色容易呆', 'warn']; box.innerHTML = '';
+      box.appendChild(el('div', { class: 'row' }, [el('strong', { text: '設定深度 ' + d.score + ' / 100' }), el('span', { class: 'tag ' + lvl[1], text: lvl[0] })]));
+      box.appendChild(el('div', { style: 'height:12px;margin:6px 0;border:var(--bw-s) solid var(--ink);border-radius:var(--r-pill);background:var(--panel);overflow:hidden' }, [el('div', { style: 'height:100%;width:' + d.score + '%;background:' + (d.score >= 85 ? 'var(--mint)' : d.score >= 60 ? 'var(--yellow)' : 'var(--pop)') })]));
+      var todo = d.items.filter(function (x) { return !x[1]; }).slice(0, 3);
+      if (todo.length) { var ul = el('ul', { class: 'muted', style: 'margin:4px 0 0' }); todo.forEach(function (x) { ul.appendChild(el('li', { text: x[2] + '：' + x[3] })); }); box.appendChild(el('div', { class: 'muted', text: '下一步可以補：' })); box.appendChild(ul); }
+      else box.appendChild(el('div', { class: 'muted', text: '八項都做到了。接下來靠試聊和標註讓他一代一代變好。' })); }
+    box.draw = draw; DEPTH.push(box); draw(); return box;
+  }
+  var DEPTH = [];
+  function depthRefresh() { DEPTH.forEach(function (b) { if (b.isConnected) b.draw(); }); }
+
   function pChars(p) {
     p.appendChild(el('p', { class: 'muted', text: '先從一兩個角色開始。設定寫得越具體，角色越不會呆：他是誰、怎麼說話、知道什麼、不知道什麼。（最多 3 個）' }));
-    P.chars.forEach(function (c, i) { var card = el('div', { class: 'card' }); card.appendChild(el('h2', { text: '角色 ' + (i + 1) + (c.name ? '：' + c.name : '') }));
+    DEPTH = [];
+    if (P.chars.length > 2) p.appendChild(el('div', { class: 'card' }, [el('strong', { text: '角色有 ' + P.chars.length + ' 個了。' }), el('span', { class: 'muted', text: ' 角色多、每個設定短，模型分不出精力，回答就會呆。先把 1～2 個寫深，其他的晚點再說。' })]));
+    P.chars.forEach(function (c, i) { var card = el('div', { class: 'card' }); card.appendChild(el('h2', { text: '角色 ' + (i + 1) + (c.name ? '：' + c.name : '') })); card.appendChild(depthCard(c));
       card.appendChild(field('名字（化名）', c.name, function (v) { c.name = v; }, { id: 'cn' + i }));
       card.appendChild(field('他是誰（簡介）', c.bio, function (v) { c.bio = v; }, { multi: 1, id: 'cb' + i, hint: '建議 40 字以上：年齡、身分、這個場景裡他在做什麼。' }));
       card.appendChild(field('說話方式', c.speech, function (v) { c.speech = v; }, { multi: 1, id: 'cs' + i, hint: '句子長短、口頭禪、情緒。' }));
