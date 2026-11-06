@@ -25,6 +25,7 @@
 
 <section id="app" hidden>
   <div class="row" style="justify-content:space-between"><div><h1 id="hi"></h1><span class="tag" id="who"></span> <span class="tag ok" id="saved">已儲存</span></div><button id="out" class="ghost">登出</button></div>
+  <div id="guide"></div>
   <div class="tabs" id="tabs"></div>
   <div id="pane"></div>
 </section>
@@ -36,6 +37,7 @@
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-database-compat.js"></script>
 <script src="lab.js?v=3"></script>
+<script src="starter.js?v=1"></script>
 <script>
 (function () {
   var $ = function (i) { return document.getElementById(i); };
@@ -54,7 +56,7 @@
   function save() { mark('儲存中…', ''); clearTimeout(timer); timer = setTimeout(function () {
     var s = JSON.stringify(P);
     if (s.length > 80000) { mark('內容太長，未儲存', 'warn'); return; }
-    ctx.db.set(path('project'), s).then(function () { mark('已儲存', 'ok'); ev('save'); }).catch(function (e) { mark('儲存失敗', 'warn'); console.error(e); }); }, 900); }
+    ctx.db.set(path('project'), s).then(function () { mark('已儲存', 'ok'); ev('save'); renderGuide(); }).catch(function (e) { mark('儲存失敗', 'warn'); console.error(e); }); }, 900); }
   function saveSettings() { var o = { model: S.model || MODELS[0], jarvisName: S.jarvisName || '', updatedAt: Date.now() }; return ctx.db.set(path('settings'), o); }
 
   /* 欄位工具 */
@@ -65,7 +67,7 @@
   /* 分頁 */
   var TABS = [['home', '你在這裡'], ['chars', '角色'], ['scenes', '場景'], ['story', '故事'], ['chat', '試聊'], ['evo', '進化'], ['set', '設定']];
   function renderTabs() { var t = $('tabs'); t.innerHTML = ''; TABS.forEach(function (x) { var b = el('button', { text: x[1], class: x[0] === tab ? 'on' : 'ghost' }); b.onclick = function () { tab = x[0]; renderTabs(); renderPane(); }; t.appendChild(b); }); }
-  function renderPane() { var p = $('pane'); p.innerHTML = ''; ({ home: pHome, chars: pChars, scenes: pScenes, story: pStory, chat: pChat, evo: pEvo, set: pSet })[tab](p); }
+  function renderPane() { var p = $('pane'); p.innerHTML = ''; ({ home: pHome, chars: pChars, scenes: pScenes, story: pStory, chat: pChat, evo: pEvo, set: pSet })[tab](p); renderGuide(); }
 
   function checks() { var c = P.chars, st = P.story, out = [];
     out.push([c.length >= 1, '至少一個角色']);
@@ -74,6 +76,59 @@
     out.push([(st.concept || '').length >= 10, '故事的高概念（一句話）']);
     out.push([(st.goal || '').length > 0 && (st.ending || '').length > 0, '故事有目標和結局']);
     return out; }
+
+  /* 新手引導：一次一步、可跳過、做完（或全部跳過）就消失。進度由資料自己算，跳過的記在這台裝置。 */
+  var FL = { chat: 0, mark: 0 };
+  function lsGet(k) { try { return localStorage.getItem(k); } catch (e) { return null; } } function lsSet(k, v) { try { localStorage.setItem(k, v); } catch (e) {} }
+  function gk(x) { return 'labob.' + (ctx && ctx.code) + '.' + x; }
+  var GSTEPS = [
+    ['chars', '先替第一個角色取名字（用化名）', function () { return P.chars.some(function (c) { return (c.name || '').trim(); }); }],
+    ['chars', '寫簡介（40 字以上）和說話方式（20 字以上）', function () { return P.chars.some(function (c) { return (c.bio || '').length >= 40 && (c.speech || '').length >= 20; }); }],
+    ['chars', '在「性格座標」點一下，決定他話多或話少、重感受或重道理', function () { return P.chars.some(function (c) { return c.coord; }); }],
+    ['scenes', '建一個場景，加一個房間', function () { return P.scenes.some(function (s) { return s.rooms && s.rooms.length; }); }],
+    ['story', '寫故事的高概念（一句話，讓人想看下去）', function () { return (P.story.concept || '').length >= 10; }],
+    ['chat', '到「試聊」跟你的角色說一句話', function () { return FL.chat > 0; }],
+    ['chat', '在角色的回覆下面標「像」「不像」或「卡住」', function () { return FL.mark > 0; }]
+  ];
+  function renderGuide() {
+    var g = $('guide'); if (!g) return; g.innerHTML = ''; if (!ctx || !P || lsGet(gk('off')) === '1') return;
+    var skip = []; try { skip = JSON.parse(lsGet(gk('skip')) || '[]'); } catch (e) {}
+    var i = -1; for (var k = 0; k < GSTEPS.length; k++) { if (!GSTEPS[k][2]() && skip.indexOf(k) < 0) { i = k; break; } }
+    if (i < 0) return;
+    var go = el('button', { text: '帶我去' }), sk = el('button', { class: 'ghost', text: '跳過這步' }), off = el('button', { class: 'ghost', text: '全部跳過' });
+    go.onclick = function () { tab = GSTEPS[i][0]; renderTabs(); renderPane(); };
+    sk.onclick = function () { skip.push(i); lsSet(gk('skip'), JSON.stringify(skip)); renderGuide(); };
+    off.onclick = function () { lsSet(gk('off'), '1'); renderGuide(); };
+    g.appendChild(el('div', { class: 'card', style: 'margin-bottom:12px' }, [el('span', { class: 'tag', text: '新手引導　第 ' + (i + 1) + ' / ' + GSTEPS.length + ' 步' }), el('p', { text: GSTEPS[i][1], style: 'font-weight:700;margin:8px 0' }), el('div', { class: 'row' }, [go, sk, off])]));
+  }
+
+  /* 起手範例 */
+  function projectEmpty() { return !P.chars.some(function (c) { return c.name || c.bio; }) && !P.scenes.length && !(P.story.concept || ''); }
+  function templateCard() {
+    var card = el('div', { class: 'card' }, [el('h2', { text: '起手範例（可複製後改成自己的）' }), el('p', { class: 'muted', text: '兩個方向各一組：1 個場景、2 個角色、1 段故事開頭，人物都是化名。選一個套用，再慢慢改成你自己的。' })]);
+    LABX.templates.forEach(function (t) { var b = el('button', { text: '套用這組' }), box = el('div', { style: 'margin:10px 0;padding-top:8px;border-top:var(--bw-s) solid var(--line)' }, [el('strong', { text: t.name }), el('div', { class: 'muted', text: t.desc })]);
+      b.onclick = function () { if (!projectEmpty() && b.dataset.arm !== '1') { b.dataset.arm = '1'; b.textContent = '會取代現有內容，再按一次確認'; setTimeout(function () { b.dataset.arm = ''; b.textContent = '套用這組'; }, 6000); return; }
+        var c = JSON.parse(JSON.stringify(t.project)); P.chars = c.chars; P.scenes = c.scenes; P.story = Object.assign(blank().story, c.story); save(); ev('template-' + t.id); renderPane(); renderGuide(); };
+      box.appendChild(el('div', { style: 'margin-top:6px' }, [b])); card.appendChild(box); });
+    return card;
+  }
+
+  /* 匯出 Markdown（給期末作業） */
+  function exportCard() {
+    var card = el('div', { class: 'card' }, [el('h2', { text: '匯出成 Markdown（給期末作業）' }), el('p', { class: 'muted', text: '把故事、場景、角色、進化紀錄和試聊標註整理成一份文件。' })]);
+    var go = el('button', { text: '產生匯出內容' }), out = el('div'); card.appendChild(go); card.appendChild(out);
+    go.onclick = function () { out.textContent = '整理中…';
+      Promise.all([ctx.db.get(path('gens')), ctx.db.get(path('marks')), ctx.db.get(path('req')), ctx.db.get(path('out')), ctx.db.get('lab/spend/' + ctx.code)]).then(function (r) {
+        var sp = r[4] || {}, md = LABX.exportMd({ project: P, gens: r[0] || {}, marks: r[1] || {}, req: r[2] || {}, out: r[3] || {}, model: S.model || MODELS[0], used: Number(sp.ntd) || 0, cap: (sp.capNtd === undefined || sp.capNtd === null) ? DEFAULT_CAP : sp.capNtd });
+        out.innerHTML = ''; var ta = el('textarea', { readonly: 'readonly', rows: '14', 'aria-label': '匯出的 Markdown', style: 'margin-top:10px' }); ta.value = md;
+        var dl = el('button', { text: '下載 .md 檔' }), cp = el('button', { class: 'ghost', text: '複製全文' }), msg = el('span', { class: 'muted' });
+        dl.onclick = function () { try { var a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([md], { type: 'text/markdown;charset=utf-8' })); a.download = '提案室實驗-' + new Date().toISOString().slice(0, 10) + '.md'; document.body.appendChild(a); a.click(); a.remove(); ev('export'); msg.textContent = '已下載'; } catch (e) { msg.textContent = '下載沒成功，請用複製'; } };
+        cp.onclick = function () { try { navigator.clipboard.writeText(md).then(function () { msg.textContent = '已複製'; }, function () { ta.select(); msg.textContent = '請按 Ctrl+C'; }); } catch (e) { ta.select(); msg.textContent = '請按 Ctrl+C'; } };
+        out.appendChild(ta); out.appendChild(el('div', { class: 'row', style: 'margin-top:8px' }, [dl, cp, msg]));
+      }).catch(function (e) { out.textContent = '匯出失敗：' + (e && e.code || e); }); };
+    return card;
+  }
+
   function pHome(p) {
     var cs = checks(), done = cs.filter(function (x) { return x[0]; }).length, nxt = cs.filter(function (x) { return !x[0]; })[0];
     var c1 = el('div', { class: 'card' }, [el('span', { class: 'tag', text: '今天的你' }), el('h2', { text: '你現在是這個實驗的設計師' }),
@@ -84,7 +139,7 @@
     var line = '我的助理叫「' + (S.jarvisName || '') + '」，個性：' + (S.persona || '簡潔、會先問再動手') + '。請存入 jarvis/memory/identity.json。';
     var cp = el('button', { class: 'ghost', text: '複製' }); cp.onclick = function () { try { navigator.clipboard.writeText(line); } catch (e) {} };
     var c3 = el('div', { class: 'card' }, [el('h2', { text: '讓助理接手' }), el('p', { text: '把下面這一行貼給你的助理（Claude CLI），它就知道自己叫什麼：' }), el('p', {}, [el('code', { text: line })]), cp]);
-    p.appendChild(c1); p.appendChild(c2); if (JARVIS_ON) p.appendChild(c3); }
+    p.appendChild(c1); p.appendChild(c2); if (JARVIS_ON) p.appendChild(c3); p.appendChild(exportCard()); if (projectEmpty()) p.insertBefore(templateCard(), p.firstChild); else p.appendChild(templateCard()); }
 
 
   /* 性格座標（沿用痛點急診室人物座標圖）：橫軸 話少 ↔ 話多，縱軸 先在意感受 ↔ 先在意道理。格內位置只代表程度，不是分類。 */
@@ -204,7 +259,7 @@
       box.scrollTop = box.scrollHeight;
     }
     function markIt(id, v, note) { var o = JSON.stringify({ o: id, c: chatCi, v: v, n: String(note || '').slice(0, 200), t: Date.now() });
-      ctx.db.set(path('marks/' + id), o).then(function () { ev('mark-' + v); load(); }).catch(function () { $('chmsg').textContent = '標註沒存成功'; }); }
+      ctx.db.set(path('marks/' + id), o).then(function () { ev('mark-' + v); FL.mark++; load(); renderGuide(); }).catch(function () { $('chmsg').textContent = '標註沒存成功'; }); }
     function load() { Promise.all([ctx.db.get(path('req')), ctx.db.get(path('out')), ctx.db.get(path('marks')), ctx.db.get('lab/spend/' + ctx.code)]).then(function (r) {
       var sp = r[3] || {}, cap = (sp.capNtd === undefined || sp.capNtd === null) ? DEFAULT_CAP : Number(sp.capNtd), used = Number(sp.ntd) || 0;
       info.textContent = '目前型號：' + (S.model || MODELS[0]) + '　累積 NT$ ' + fmt(used) + ' ／ ' + fmt(cap); go.disabled = used >= cap; if (used >= cap) $('chmsg').textContent = '額度用完了，需要增加請向楊老師提出。';
@@ -213,7 +268,7 @@
     }).catch(function (e) { box.textContent = '讀不到對話：' + (e && e.code || e); }); }
     go.onclick = function () { var m = inp.value.trim(); if (!m) { $('chmsg').textContent = '先打一句話'; return; } if (m.length > 300) { $('chmsg').textContent = '太長了，300 字內'; return; }
       var id = 'r' + Date.now(); go.disabled = true; $('chmsg').textContent = '';
-      ctx.db.set(path('req/' + id), JSON.stringify({ c: chatCi, m: m, t: Date.now() })).then(function () { inp.value = ''; ev('chat'); go.disabled = false; load(); }).catch(function (e) { go.disabled = false; $('chmsg').textContent = '送出失敗：' + (e && e.code || e); }); };
+      ctx.db.set(path('req/' + id), JSON.stringify({ c: chatCi, m: m, t: Date.now() })).then(function () { inp.value = ''; ev('chat'); FL.chat++; go.disabled = false; load(); renderGuide(); }).catch(function (e) { go.disabled = false; $('chmsg').textContent = '送出失敗：' + (e && e.code || e); }); };
     load();
   }
   function J(s) { try { return JSON.parse(s); } catch (e) { return null; } }
@@ -243,8 +298,8 @@
   function boot(c) {
     ctx = c; if (!ctx.code) { ctx.code = ctx.isAdmin ? 'lab-admin-preview' : null; }
     $('who').textContent = ctx.email;
-    Promise.all([ctx.db.get(path('settings')), ctx.db.get(path('project')), ctx.db.get(path('gens'))]).then(function (r) {
-      S = r[0] || {}; G = r[2] || {}; try { P = r[1] ? JSON.parse(r[1]) : blank(); } catch (e) { P = blank(); }
+    Promise.all([ctx.db.get(path('settings')), ctx.db.get(path('project')), ctx.db.get(path('gens')), ctx.db.get(path('req')), ctx.db.get(path('marks'))]).then(function (r) {
+      S = r[0] || {}; G = r[2] || {}; FL.chat = Object.keys(r[3] || {}).length; FL.mark = Object.keys(r[4] || {}).length; try { P = r[1] ? JSON.parse(r[1]) : blank(); } catch (e) { P = blank(); }
       P.chars = P.chars || []; P.scenes = P.scenes || []; P.story = P.story || blank().story;
       if (JARVIS_ON && !S.jarvisName) { show('naming'); return; } enter();
     }).catch(function (e) { fatal('讀取你的資料失敗：' + (e && e.code || e)); });
