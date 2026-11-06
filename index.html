@@ -265,7 +265,7 @@
 
 
   /* 試聊：和自己的角色說話，並標「像／不像／卡住」。標註是進化（RSI）的輸入。 */
-  var chatCi = 0, chatPoll = null;
+  var chatCi = 0, chatPoll = null, chatRoom = '';
   function pChat(p) {
     if (!P.chars.length) { p.appendChild(el('div', { class: 'card' }, [el('h2', { text: '先做一個角色' }), el('p', { text: '到「角色」頁寫好一個角色，再回來和他說話。' })])); return; }
     if (chatCi >= P.chars.length) chatCi = 0;
@@ -278,8 +278,13 @@
     var box = el('div', { class: 'card', id: 'chbox' }, [el('div', { class: 'muted', text: '讀取對話…' })]); p.appendChild(box);
     var inp = el('textarea', { id: 'chm', placeholder: '對' + (P.chars[chatCi].name || '他') + '說的話（最多 300 字）' }), go = el('button', { text: '送出', id: 'chgo' });
     var msg = el('span', { class: 'muted', id: 'chmsg' });
+    var roomOpts = []; P.scenes.forEach(function (sc) { (sc.rooms || []).forEach(function (r) { if (sc.name && r.name) roomOpts.push(sc.name + '：' + r.name); }); });
+    var roomSel = null; if (roomOpts.length) { roomSel = el('select', { id: 'chroom', 'aria-label': '你們現在在哪個房間' }); roomOpts.forEach(function (n) { var o = el('option', { value: n, text: n }); if (n === chatRoom) o.selected = true; roomSel.appendChild(o); }); roomSel.onchange = function () { chatRoom = roomSel.value; };
+      if (!chatRoom) chatRoom = roomOpts[0]; top.appendChild(el('label', { text: '你們現在在哪個房間', for: 'chroom' })); top.appendChild(roomSel); }
+    var gmIdx = P.chars.findIndex(function (c) { return c.name && c.name === P.story.gm; }), gmB = null;
+    if (gmIdx >= 0) { gmB = el('button', { class: 'ghost', text: '請主持人開場', id: 'chgm' }); gmB.onclick = function () { gmB.disabled = true; var id = 'r' + Date.now(); ctx.db.set(path('req/' + id), JSON.stringify({ c: chatCi, s: curS, g: 1, r: chatRoom, m: '（請主持人開場）', t: Date.now() })).then(function () { ev('gm-open'); FL.chat++; load(); }).catch(function () { gmB.disabled = false; $('chmsg').textContent = '送出失敗'; }); }; }
     var endB = el('button', { class: 'ghost', text: '結束這一場並記住', id: 'chend' });
-    p.appendChild(el('div', { class: 'card' }, [el('label', { text: '你說', for: 'chm' }), inp, el('div', { class: 'row', style: 'margin-top:8px' }, [go, endB, msg])]));
+    p.appendChild(el('div', { class: 'card' }, [el('label', { text: '你說', for: 'chm' }), inp, el('div', { class: 'row', style: 'margin-top:8px' }, [go, endB].concat(gmB ? [gmB] : []).concat([msg]))]));
     var memBox = el('div', { class: 'card', id: 'chmem' }); p.appendChild(memBox);
     var curS = 1;
     function sesOf(reqs, mem) { var mx = 1, ended = false; Object.keys(reqs).forEach(function (k) { var q = J(reqs[k]) || {}; if (Number(q.c || 0) === chatCi) mx = Math.max(mx, Number(q.s || 1)); });
@@ -295,19 +300,19 @@
     function render(reqs, outs, marks) {
       box.innerHTML = ''; var ids = Object.keys(reqs).sort(), n = 0;
       ids.forEach(function (id) { var rq = J(reqs[id]) || {}; if (Number(rq.c || 0) !== chatCi || Number(rq.s || 1) !== curS) return; n++;
-        box.appendChild(el('div', { style: 'margin:6px 0;text-align:right' }, [el('span', { class: 'tag', text: '你：' + (rq.m || '') })]));
+        if (!rq.g) box.appendChild(el('div', { style: 'margin:6px 0;text-align:right' }, [el('span', { class: 'tag', text: '你：' + (rq.m || '') })])); else box.appendChild(el('div', { class: 'muted', text: '（主持人開場）' + (rq.r ? '　地點：' + rq.r : '') }));
         var ou = J(outs[id]); var m = J(marks[id]);
         if (!ou) { box.appendChild(el('div', { class: 'muted', text: (P.chars[chatCi].name || '角色') + ' 想一下…' })); return; }
-        if (ou.err) { box.appendChild(el('div', { class: 'tag warn', text: ({ cap: '你的額度用完了，需要增加請向楊老師提出。', 'cap-global': '今天全部人的總額度用完了，明天再試。', nochar: '找不到這個角色，先到角色頁確認。' })[ou.err] || '這次沒有回成功，再送一次。' })); return; }
-        var b = el('div', { class: 'card', style: 'margin:6px 0;padding:8px 12px' }); b.appendChild(el('div', { text: (P.chars[chatCi].name || '角色') + '：' + ou.text }));
+        if (ou.err) { box.appendChild(el('div', { class: 'tag warn', text: ({ cap: '你的額度用完了，需要增加請向楊老師提出。', 'cap-global': '今天全部人的總額度用完了，明天再試。', nochar: '找不到這個角色，先到角色頁確認。', nogm: '故事頁選的主持人找不到，先到故事頁確認。' })[ou.err] || '這次沒有回成功，再送一次。' })); return; }
+        var b = el('div', { class: 'card', style: 'margin:6px 0;padding:8px 12px' }); b.appendChild(el('div', { text: (rq.g ? '主持人 ' + (P.story.gm || '') : (P.chars[chatCi].name || '角色')) + '：' + ou.text }));
         var row = el('div', { class: 'row', style: 'margin-top:6px' });
-        [['like', '像'], ['unlike', '不像'], ['stuck', '卡住']].forEach(function (x) { var bt = el('button', { text: x[1], class: (m && m.v === x[0]) ? '' : 'ghost' }); bt.onclick = function () { markIt(id, x[0], note.value); }; row.appendChild(bt); });
+        [['like', '像'], ['unlike', '不像'], ['stuck', '卡住']].forEach(function (x) { var bt = el('button', { text: x[1], class: (m && m.v === x[0]) ? '' : 'ghost' }); bt.onclick = function () { markIt(id, x[0], note.value, rq.g ? gmIdx : chatCi); }; row.appendChild(bt); });
         var note = el('input', { placeholder: '哪裡不像／卡在哪（一句話，可不寫）', 'aria-label': '備註' }); note.value = (m && m.n) || ''; row.appendChild(note);
         b.appendChild(row); if (m) b.appendChild(el('div', { class: 'muted', text: '已標：' + ({ like: '像', unlike: '不像', stuck: '卡住' })[m.v] })); box.appendChild(b); });
       if (!n) box.appendChild(el('div', { class: 'muted', text: curS > 1 ? '新的一場開始了，他記得前幾場的重點。先說一句吧。' : '還沒聊過。先說一句吧。' })); endB.disabled = !n;
       box.scrollTop = box.scrollHeight;
     }
-    function markIt(id, v, note) { var o = JSON.stringify({ o: id, c: chatCi, v: v, n: String(note || '').slice(0, 200), t: Date.now() });
+    function markIt(id, v, note, ci) { var o = JSON.stringify({ o: id, c: (ci === undefined ? chatCi : ci), v: v, n: String(note || '').slice(0, 200), t: Date.now() });
       ctx.db.set(path('marks/' + id), o).then(function () { ev('mark-' + v); FL.mark++; load(); renderGuide(); }).catch(function () { $('chmsg').textContent = '標註沒存成功'; }); }
     function load() { Promise.all([ctx.db.get(path('req')), ctx.db.get(path('out')), ctx.db.get(path('marks')), ctx.db.get('lab/spend/' + ctx.code), ctx.db.get(path('mem'))]).then(function (r) {
       var mem = r[4] || {}; curS = sesOf(r[0] || {}, mem); var sp = r[3] || {}, cap = (sp.capNtd === undefined || sp.capNtd === null) ? DEFAULT_CAP : Number(sp.capNtd), used = Number(sp.ntd) || 0;
@@ -317,7 +322,7 @@
     }).catch(function (e) { box.textContent = '讀不到對話：' + (e && e.code || e); }); }
     go.onclick = function () { var m = inp.value.trim(); if (!m) { $('chmsg').textContent = '先打一句話'; return; } if (m.length > 300) { $('chmsg').textContent = '太長了，300 字內'; return; }
       var id = 'r' + Date.now(); go.disabled = true; $('chmsg').textContent = '';
-      ctx.db.set(path('req/' + id), JSON.stringify({ c: chatCi, s: curS, m: m, t: Date.now() })).then(function () { inp.value = ''; ev('chat'); FL.chat++; go.disabled = false; load(); renderGuide(); }).catch(function (e) { go.disabled = false; $('chmsg').textContent = '送出失敗：' + (e && e.code || e); }); };
+      ctx.db.set(path('req/' + id), JSON.stringify({ c: chatCi, s: curS, r: chatRoom, m: m, t: Date.now() })).then(function () { inp.value = ''; ev('chat'); FL.chat++; go.disabled = false; load(); renderGuide(); }).catch(function (e) { go.disabled = false; $('chmsg').textContent = '送出失敗：' + (e && e.code || e); }); };
     load();
   }
   function J(s) { try { return JSON.parse(s); } catch (e) { return null; } }
