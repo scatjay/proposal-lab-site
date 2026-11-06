@@ -35,7 +35,7 @@
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-database-compat.js"></script>
-<script src="lab.js?v=2"></script>
+<script src="lab.js?v=3"></script>
 <script>
 (function () {
   var $ = function (i) { return document.getElementById(i); };
@@ -86,12 +86,35 @@
     var c3 = el('div', { class: 'card' }, [el('h2', { text: '讓助理接手' }), el('p', { text: '把下面這一行貼給你的助理（Claude CLI），它就知道自己叫什麼：' }), el('p', {}, [el('code', { text: line })]), cp]);
     p.appendChild(c1); p.appendChild(c2); if (JARVIS_ON) p.appendChild(c3); }
 
+
+  /* 性格座標（沿用痛點急診室人物座標圖）：橫軸 話少 ↔ 話多，縱軸 先在意感受 ↔ 先在意道理。格內位置只代表程度，不是分類。 */
+  var QUADS = { IF: ['話少、先在意感受', '要先承接處境，才會開口', '#3d6fe0', '#e6edfb'], IT: ['話少、先在意道理', '一句話說清來意，問他做過的一步', '#14a08c', '#def4f0'],
+                EF: ['話多、先在意感受', '話多又容易離題，先接住再拉回', '#f08300', '#fff1dc'], ET: ['話多、先在意道理', '要結論和指標，先講來意和時間', '#6aa81a', '#eef6dc'] };
+  function quadOf(co) { return (co.x < 0.5 ? 'I' : 'E') + (co.y < 0.5 ? 'F' : 'T'); }
+  function coordPad(c, i) {
+    var co = c.coord || { x: 0.5, y: 0.5 }, set = !!c.coord, wrap = el('div', { style: 'margin:12px 0' });
+    wrap.appendChild(el('label', { text: '性格座標（點一下或拖曳，也能用方向鍵）' }));
+    var pad = el('div', { id: 'cp' + i, tabindex: '0', role: 'application', 'aria-label': '性格座標：橫軸話少到話多，縱軸感受到道理', style: 'position:relative;height:200px;border:var(--bw) solid var(--ink);border-radius:var(--r-m);overflow:hidden;touch-action:none;cursor:crosshair;display:grid;grid-template-columns:1fr 1fr;grid-template-rows:1fr 1fr' });
+    ['IF', 'EF', 'IT', 'ET'].forEach(function (k) { pad.appendChild(el('div', { style: 'background:' + QUADS[k][3] + ';color:#1e1e1e;font-size:12px;padding:4px 6px;border:1px solid ' + QUADS[k][2], text: QUADS[k][0] })); });
+    var puck = el('div', { style: 'position:absolute;width:22px;height:22px;margin:-11px 0 0 -11px;border-radius:50%;border:3px solid #1e1e1e;background:#ffd43b;box-shadow:2px 2px 0 #1e1e1e;pointer-events:none' }); pad.appendChild(puck);
+    var info = el('div', { class: 'muted', style: 'margin-top:6px' });
+    function draw() { puck.style.left = (co.x * 100) + '%'; puck.style.top = (co.y * 100) + '%'; puck.style.display = set ? '' : 'none'; var q = QUADS[quadOf(co)];
+      info.textContent = set ? '現在在「' + q[0] + '」：' + q[1] + '。格內位置只代表程度，不是分類。' : '還沒設定。點一下座標圖，系統會照這個調整他說話的長短與重心。'; }
+    function put(x, y) { co.x = Math.max(0, Math.min(1, x)); co.y = Math.max(0, Math.min(1, y)); co.x = Math.round(co.x * 100) / 100; co.y = Math.round(co.y * 100) / 100; set = true; c.coord = { x: co.x, y: co.y }; draw(); save(); }
+    function at(e) { var r = pad.getBoundingClientRect(); put((e.clientX - r.left) / r.width, (e.clientY - r.top) / r.height); }
+    var down = false; pad.addEventListener('pointerdown', function (e) { down = true; try { pad.setPointerCapture(e.pointerId); } catch (x) {} at(e); });
+    pad.addEventListener('pointermove', function (e) { if (down) at(e); }); pad.addEventListener('pointerup', function () { down = false; });
+    pad.addEventListener('keydown', function (e) { var d = { ArrowLeft: [-0.1, 0], ArrowRight: [0.1, 0], ArrowUp: [0, -0.1], ArrowDown: [0, 0.1] }[e.key]; if (d) { e.preventDefault(); put(co.x + d[0], co.y + d[1]); } });
+    wrap.appendChild(el('div', { class: 'muted', style: 'display:flex;justify-content:space-between', }, [el('span', { text: '← 話少' }), el('span', { text: '話多 →' })]));
+    wrap.appendChild(pad); wrap.appendChild(el('div', { class: 'muted', text: '↑ 先在意感受　　↓ 先在意道理' })); wrap.appendChild(info); draw(); return wrap; }
+
   function pChars(p) {
     p.appendChild(el('p', { class: 'muted', text: '先從一兩個角色開始。設定寫得越具體，角色越不會呆：他是誰、怎麼說話、知道什麼、不知道什麼。（最多 3 個）' }));
     P.chars.forEach(function (c, i) { var card = el('div', { class: 'card' }); card.appendChild(el('h2', { text: '角色 ' + (i + 1) + (c.name ? '：' + c.name : '') }));
       card.appendChild(field('名字（化名）', c.name, function (v) { c.name = v; }, { id: 'cn' + i }));
       card.appendChild(field('他是誰（簡介）', c.bio, function (v) { c.bio = v; }, { multi: 1, id: 'cb' + i, hint: '建議 40 字以上：年齡、身分、這個場景裡他在做什麼。' }));
       card.appendChild(field('說話方式', c.speech, function (v) { c.speech = v; }, { multi: 1, id: 'cs' + i, hint: '句子長短、口頭禪、情緒。' }));
+      card.appendChild(coordPad(c, i));
       card.appendChild(field('他知道什麼（一行一件）', lines(c.knows), function (v) { c.knows = unlines(v); }, { multi: 1, id: 'ck' + i }));
       card.appendChild(field('他不知道什麼（一行一件）', lines(c.unknown), function (v) { c.unknown = unlines(v); }, { multi: 1, id: 'cu' + i }));
       card.appendChild(field('他的規則（一行一條，例如：每次最多兩句）', lines(c.rules), function (v) { c.rules = unlines(v); }, { multi: 1, id: 'cr' + i }));
@@ -127,12 +150,16 @@
   function gensList() { return Object.keys(G).map(function (k) { var o; try { o = JSON.parse(G[k]); } catch (e) { return null; } if (o) o._id = k; return o; }).filter(Boolean).sort(function (a, b) { return (b.g || 0) - (a.g || 0); }); }
   function setVerdict(g, v) { g.v = v; var o = {}; Object.keys(g).forEach(function (k) { if (k !== '_id') o[k] = g[k]; }); G[g._id] = JSON.stringify(o); return ctx.db.set(path('gens/' + g._id), G[g._id]); }
   var VL = { candidate: ['等你決定', 'warn'], accepted: ['你接受了', 'ok'], rejected: ['你退回了', ''] };
-  function pEvo(p) {
+  function pEvo(p) {   /* 先重新讀一次候選：代理程式隨時可能新增，不必重新整理頁面 */
+    p.appendChild(el('p', { class: 'muted', text: '讀取進化紀錄…' }));
+    ctx.db.get(path('gens')).then(function (g) { if (tab !== 'evo') return; G = g || {}; p.innerHTML = ''; pEvoBody(p); }).catch(function () { p.textContent = '讀不到進化紀錄，請重新整理。'; });
+  }
+  function pEvoBody(p) {
     var gs = gensList();
     p.appendChild(el('div', { class: 'card' }, [el('h2', { text: '角色怎麼一代一代變聰明' }),
       el('p', { text: '系統會根據你的標註，替角色提出修改版本（候選）。每一代都記在這裡：改了哪個欄位、改之前和改之後、為什麼、測驗分數。你接受才會生效，退回的也會留下來，並成為下一代的參考。' }),
       el('p', { class: 'muted', text: '新的候選版本必須通過兩關：舊的好例子一題都不能退步，而且至少一題變好；碰到紅線（洩漏設定、扮演真人、醫療建議）一律不過。' })]));
-    if (!gs.length) { p.appendChild(el('div', { class: 'card' }, [el('h2', { text: '還沒有進化紀錄' }), el('p', { text: '累積約 10 題你的標註（「像／不像」「卡住」）之後，系統才會開始提出候選。在那之前，把角色的設定寫得具體一點，效果最大。' })])); return; }
+    if (!gs.length) { p.appendChild(el('div', { class: 'card' }, [el('h2', { text: '還沒有進化紀錄' }), el('p', { text: '先去「試聊」跟角色說幾句話，在回覆下面標「像」「不像」「卡住」（至少 1 個「像」和 2 個「不像／卡住」），系統才會開始提出候選。在那之前，把角色的設定寫得具體一點，效果最大。' })])); return; }
     gs.forEach(function (g) { var vl = VL[g.v] || ['', ''], c = P.chars[g.ci] || {}, card = el('div', { class: 'card' });
       card.appendChild(el('div', { class: 'row' }, [el('h2', { text: '第 ' + g.g + ' 代', style: 'margin:0' }), el('span', { class: 'tag ' + vl[1], text: vl[0] }), el('span', { class: 'muted', text: (c.name || '角色 ' + ((g.ci || 0) + 1)) + '　' + (g.f || '') + '　' + (g.t ? new Date(g.t).toLocaleString('zh-TW') : '') })]));
       if (g.why) card.appendChild(el('p', { text: '為什麼改：' + g.why }));

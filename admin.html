@@ -28,6 +28,10 @@
     <div class="tbl"><table><thead><tr><th>代碼</th><th>助理名</th><th>模型</th><th>角色／場景</th><th>進化（候選／接受／退回）</th><th>操作次數</th><th>最近更新</th></tr></thead><tbody id="uBody"></tbody></table></div>
   </div>
 
+  <div class="card"><h2>使用歷程</h2><p class="muted">每位學生一條線，點是她做的事，橫軸是最近 14 天。滑過點可看是什麼。</p><div id="tlBox"></div><div class="row" id="tlLegend" style="margin-top:6px"></div><ol id="tlList" class="muted" style="margin:8px 0 0;padding-left:20px"></ol></div>
+
+  <div class="card"><h2>用量圖</h2><p class="muted">每天場上角色對話次數（長條）與當天花費（數字）。</p><div id="chartBox"></div></div>
+
   <div class="card"><h2>花費與上限（台幣，累積）</h2><p class="muted">上限預設 1,000 元；學生只能看、不能改。要增加由你在這裡改，儲存後學生的設定頁立刻看到。代理程式要在每次呼叫前讀這裡的 <code>capNtd</code>，用完就暫停該生的場上角色。</p>
     <div class="tbl"><table><thead><tr><th>代碼</th><th>已花</th><th>上限</th><th>比例</th><th>改上限</th></tr></thead><tbody id="spBody"></tbody></table></div><div class="muted" id="spMsg"></div></div>
 
@@ -40,7 +44,7 @@
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-database-compat.js"></script>
-<script src="lab.js?v=2"></script>
+<script src="lab.js?v=3"></script>
 <script>
 (function () {
   var $ = function (i) { return document.getElementById(i); }, ctx;
@@ -49,9 +53,51 @@
   function fatal(m) { $('fatalMsg').textContent = m; show('fatal'); }
   function J(s) { try { return JSON.parse(s); } catch (e) { return null; } }
 
+  /* ---------- 使用歷程時間軸、用量圖 ---------- */
+  var EVL = { open: '開啟', save: '儲存', addChar: '新增角色', model: '換型號', named: '命名', chat: '試聊', 'mark-like': '標「像」', 'mark-unlike': '標「不像」', 'mark-stuck': '標「卡住」', 'gen-accept': '接受進化', 'gen-reject': '退回進化' };
+  var EVG = { open: ['登入', '#a5d8ff'], save: ['編輯', '#3d6fe0'], addChar: ['編輯', '#3d6fe0'], model: ['編輯', '#3d6fe0'], named: ['編輯', '#3d6fe0'], chat: ['試聊', '#f08300'], 'mark-like': ['標註', '#6aa81a'], 'mark-unlike': ['標註', '#6aa81a'], 'mark-stuck': ['標註', '#6aa81a'], 'gen-accept': ['進化', '#c92a2a'], 'gen-reject': ['進化', '#c92a2a'] };
+  function svg(tag, a, kids) { var e = document.createElementNS('http://www.w3.org/2000/svg', tag); Object.keys(a || {}).forEach(function (k) { e.setAttribute(k, a[k]); }); (kids || []).forEach(function (c) { e.appendChild(c); }); return e; }
+  function stxt(x, y, t, anchor) { var e = svg('text', { x: x, y: y, 'font-size': 11, fill: 'currentColor', 'text-anchor': anchor || 'start' }); e.textContent = t; return e; }
+  function renderTimeline(u) {
+    var DAY = 86400000, now = Date.now(), t0 = now - 14 * DAY, W = 640, LM = 90, codes = Object.keys(u), H = 28 + codes.length * 30 + 10, all = [];
+    var box = $('tlBox'); box.innerHTML = ''; var svgEl = svg('svg', { viewBox: '0 0 ' + W + ' ' + H, width: '100%', role: 'img', 'aria-label': '學生使用歷程時間軸', style: 'max-width:100%;color:var(--fg)' });
+    for (var d = 0; d <= 14; d += 2) { var x = LM + (W - LM - 10) * d / 14, dt = new Date(t0 + d * DAY); svgEl.appendChild(svg('line', { x1: x, y1: 18, x2: x, y2: H - 6, stroke: 'currentColor', 'stroke-opacity': 0.15 })); svgEl.appendChild(stxt(x, 12, (dt.getMonth() + 1) + '/' + dt.getDate(), 'middle')); }
+    codes.forEach(function (code, i) { var y = 40 + i * 30, evs = Object.keys((u[code] || {}).events || {}).map(function (k) { return J(u[code].events[k]); }).filter(function (e) { return e && e.t; });
+      svgEl.appendChild(stxt(4, y + 4, code)); svgEl.appendChild(svg('line', { x1: LM, y1: y, x2: W - 10, y2: y, stroke: 'currentColor', 'stroke-opacity': 0.3 }));
+      evs.forEach(function (e) { all.push({ c: code, k: e.k, t: e.t }); if (e.t < t0) return; var g = EVG[e.k] || ['其他', '#999'], cx = LM + (W - LM - 10) * (e.t - t0) / (14 * DAY), dot = svg('circle', { cx: cx, cy: y, r: 5, fill: g[1], stroke: 'currentColor', 'stroke-width': 1.5 });
+        dot.appendChild(svg('title', {}, [document.createTextNode(code + '　' + (EVL[e.k] || e.k) + '　' + new Date(e.t).toLocaleString('zh-TW'))])); svgEl.appendChild(dot); }); });
+    if (!codes.length) { svgEl.appendChild(stxt(10, 30, '（尚無學生）')); } box.appendChild(svgEl);
+    var lg = $('tlLegend'); lg.innerHTML = ''; [['登入', '#a5d8ff'], ['編輯', '#3d6fe0'], ['試聊', '#f08300'], ['標註', '#6aa81a'], ['進化', '#c92a2a']].forEach(function (x) { var sp = document.createElement('span'); sp.className = 'tag'; sp.textContent = '● ' + x[0]; sp.style.borderColor = x[1]; lg.appendChild(sp); });
+    all.sort(function (a, b) { return b.t - a.t; }); var ol = $('tlList'); ol.innerHTML = ''; all.slice(0, 12).forEach(function (e) { var li = document.createElement('li'); li.textContent = new Date(e.t).toLocaleString('zh-TW') + '　' + e.c + '　' + (EVL[e.k] || e.k); ol.appendChild(li); });
+    if (!all.length) { var li0 = document.createElement('li'); li0.textContent = '還沒有任何操作紀錄。'; ol.appendChild(li0); }
+  }
+  function renderChart(use) {
+    var DAY = 86400000, days = [], W = 640, H = 180, LM = 34, BW = (W - LM - 10) / 14, box = $('chartBox'); box.innerHTML = '';
+    for (var i = 13; i >= 0; i--) { var dt = new Date(Date.now() - i * DAY), k = dt.getFullYear() + '-' + String(dt.getMonth() + 1).padStart(2, '0') + '-' + String(dt.getDate()).padStart(2, '0'), turns = 0, ntd = 0; Object.keys(use[k] || {}).forEach(function (c) { turns += Number(use[k][c].turns) || 0; ntd += Number(use[k][c].ntd) || 0; }); days.push({ k: k, d: dt, turns: turns, ntd: ntd }); }
+    var mx = Math.max(5, Math.max.apply(null, days.map(function (x) { return x.turns; }))), svgEl = svg('svg', { viewBox: '0 0 ' + W + ' ' + H, width: '100%', role: 'img', 'aria-label': '每日場上角色對話次數', style: 'max-width:100%;color:var(--fg)' });
+    svgEl.appendChild(stxt(LM - 4, 20, String(mx), 'end')); svgEl.appendChild(stxt(LM - 4, 132, '0', 'end')); svgEl.appendChild(svg('line', { x1: LM, y1: 132, x2: W - 10, y2: 132, stroke: 'currentColor', 'stroke-opacity': 0.4 }));
+    days.forEach(function (x, i) { var h = 112 * x.turns / mx, bx = LM + i * BW + 3; var r = svg('rect', { x: bx, y: 132 - h, width: BW - 6, height: Math.max(h, x.turns ? 2 : 0), fill: '#f08300', stroke: 'currentColor', 'stroke-width': 1 }); r.appendChild(svg('title', {}, [document.createTextNode(x.k + '　' + x.turns + ' 次　NT$ ' + x.ntd.toFixed(2))])); svgEl.appendChild(r);
+      svgEl.appendChild(stxt(bx + (BW - 6) / 2, 146, (x.d.getMonth() + 1) + '/' + x.d.getDate(), 'middle')); svgEl.appendChild(stxt(bx + (BW - 6) / 2, 160, x.ntd ? x.ntd.toFixed(1) : '', 'middle')); });
+    svgEl.appendChild(stxt(LM, 176, '下排數字：當天花費（NT$）')); box.appendChild(svgEl);
+  }
+  /* ---------- 測試模式假資料（?mock=1&demo=1）：兩位學生十天的使用歷程 ---------- */
+  function seedDemo(db) {
+    if (!LAB.mock || !/[?&]demo=1/.test(location.search)) return Promise.resolve();
+    return db.get('lab/u/lab-demo1').then(function (ex) { if (ex) return; var DAY = 86400000, now = Date.now(), ps = [];
+      [['lab-demo1', 'demo1@example.com', 10], ['lab-demo2', 'demo2@example.com', 5]].forEach(function (st, si) {
+        ps.push(db.set('lab/_wl/' + LAB.ek(st[1]), st[0])); ps.push(db.set('lab/u/' + st[0] + '/settings', { model: 'gemini-2.5-flash-lite', jarvisName: '', updatedAt: now - DAY }));
+        ps.push(db.set('lab/u/' + st[0] + '/project', JSON.stringify({ v: 1, chars: [{ name: '小明', coord: { x: 0.3, y: 0.7 } }], scenes: [{ name: '急診室', rooms: [] }], story: {} })));
+        var kinds = ['open', 'save', 'addChar', 'save', 'chat', 'chat', 'mark-like', 'mark-unlike', 'chat', 'mark-stuck', 'gen-accept', 'open', 'chat'];
+        for (var i = 0; i < kinds.length * 2; i++) { var t = now - (st[2] - (i / 2) * (st[2] / kinds.length)) * DAY * 0.9 - si * 3600000; ps.push(db.set('lab/u/' + st[0] + '/events/e' + i, JSON.stringify({ k: kinds[i % kinds.length], t: Math.round(t) }))); }
+        ps.push(db.set('lab/spend/' + st[0], { ntd: si ? 12.3 : 87.6, capNtd: 1000, calls: si ? 40 : 210, tokIn: 90000, tokOut: 12000, updatedAt: now })); });
+      for (var d = 0; d < 9; d++) { var dt = new Date(now - d * DAY), k = dt.getFullYear() + '-' + String(dt.getMonth() + 1).padStart(2, '0') + '-' + String(dt.getDate()).padStart(2, '0'); ps.push(db.set('lab/usage/' + k, { 'lab-demo1': { turns: 5 + (d * 7) % 23, tokIn: 8000, tokOut: 900, ntd: 3 + (d * 5) % 11 }, 'lab-demo2': { turns: (d * 3) % 9, tokIn: 2000, tokOut: 300, ntd: (d * 2) % 4 } })); }
+      return Promise.all(ps); });
+  }
+
   function load() {
     Promise.all([ctx.db.get('lab/_wl'), ctx.db.get('lab/u'), ctx.db.get('lab/usage'), ctx.db.get('lab/spend')]).then(function (r) {
       var wl = r[0] || {}, u = r[1] || {}, use = r[2] || {}, spend = r[3] || {};
+      renderTimeline(u); renderChart(use);
       var spb = $('spBody'); spb.innerHTML = ''; var codes = {}; Object.keys(wl).forEach(function (k) { codes[wl[k]] = 1; }); Object.keys(spend).forEach(function (k) { codes[k] = 1; });
       Object.keys(codes).forEach(function (code) { var x = spend[code] || {}, used = Number(x.ntd) || 0, cap = (x.capNtd === undefined) ? 1000 : Number(x.capNtd), tr = document.createElement('tr');
         var inp = document.createElement('input'); inp.type = 'number'; inp.min = '0'; inp.step = '100'; inp.value = cap; inp.style.width = '110px'; inp.setAttribute('aria-label', code + ' 新上限');
@@ -91,7 +137,7 @@
   $('refresh').onclick = load; $('out').onclick = function () { LAB.signOut(); }; $('deniedOut').onclick = function () { LAB.signOut(); };
   $('gBtn').onclick = function () { $('loginMsg').textContent = '登入中…'; var r = LAB.signIn(); if (r && r.catch) r.catch(function (e) { $('loginMsg').textContent = '登入沒有完成：' + (e && e.code || e); }); };
   if (LAB.mock) { $('mockBox').hidden = false; $('gBtn').hidden = true; $('mockGo').onclick = function () { try { localStorage.setItem('labmock.email', $('mockEmail').value.trim().toLowerCase()); } catch (e) {} location.reload(); }; }
-  LAB.start({ onReady: function (c) { if (!c.isAdmin) { $('deniedMail').textContent = c.email; show('denied'); return; } ctx = c; $('who').textContent = c.email; show('app'); load(); },
+  LAB.start({ onReady: function (c) { if (!c.isAdmin) { $('deniedMail').textContent = c.email; show('denied'); return; } ctx = c; $('who').textContent = c.email; show('app'); seedDemo(c.db).then(load); },
     onSignedOut: function () { show('login'); }, onDenied: function (m) { $('deniedMail').textContent = m; show('denied'); }, onError: fatal });
 })();
 </script></body></html>

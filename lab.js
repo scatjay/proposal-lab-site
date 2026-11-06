@@ -23,6 +23,11 @@
     D.set = function (p, v) { var t = load(), parts = split(p), n = t; parts.slice(0, -1).forEach(function (k) { if (typeof n[k] !== 'object' || n[k] === null) n[k] = {}; n = n[k]; });
       if (v === null) delete n[parts[parts.length - 1]]; else n[parts[parts.length - 1]] = JSON.parse(JSON.stringify(v)); save(t); return Promise.resolve(); };
     D.remove = function (p) { return D.set(p, null); };
+    /* 假資料層的「場上角色」：只在 ?mock=1 時，送出試聊後 0.7 秒自動回一句，讓整條流程可在本機走完。正式環境由楊老師電腦上的代理程式回覆。 */
+    var rawSet = D.set;
+    D.set = function (p, v) { var r = rawSet(p, v), m = /^lab\/u\/([^/]+)\/req\/([^/]+)$/.exec(p);
+      if (m && v) { setTimeout(function () { var q = {}; try { q = JSON.parse(v); } catch (e) {} rawSet('lab/u/' + m[1] + '/out/' + m[2], JSON.stringify({ text: '（模擬回覆）我聽到你說「' + String(q.m || '').slice(0, 20) + '」。', m: 'mock', t: Date.now() })); }, 700); }
+      return r; };
   } else {
     D.get = function (p) { return db.ref(p).once('value').then(function (s) { return s.val(); }); };
     D.set = function (p, v) { return db.ref(p).set(v); };
