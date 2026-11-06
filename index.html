@@ -40,6 +40,7 @@
 (function () {
   var $ = function (i) { return document.getElementById(i); };
   var MODELS = ['gemini-2.5-flash-lite', 'gemini-3.1-flash-lite', 'gemini-3-flash-preview'];   /* 實際可用型號由楊老師的代理程式再限制一次 */
+  var JARVIS_ON = false;   /* Jarvis（學生自己的 Claude CLI 助理）等楊老師交付 Pro 帳號後才開：改 true 即恢復取名、接手與設定欄位 */
   var DEFAULT_CAP = 1000;   /* 台幣，整個實驗期間累積；增加要楊老師核准（寫入 lab/spend/<代碼>/capNtd） */
   var ctx, P, S, G = {}, tab = 'home', timer = null;
   function show(id) { ['login', 'denied', 'naming', 'app', 'fatal'].forEach(function (k) { $(k).hidden = (k !== id); }); }
@@ -83,7 +84,7 @@
     var line = '我的助理叫「' + (S.jarvisName || '') + '」，個性：' + (S.persona || '簡潔、會先問再動手') + '。請存入 jarvis/memory/identity.json。';
     var cp = el('button', { class: 'ghost', text: '複製' }); cp.onclick = function () { try { navigator.clipboard.writeText(line); } catch (e) {} };
     var c3 = el('div', { class: 'card' }, [el('h2', { text: '讓助理接手' }), el('p', { text: '把下面這一行貼給你的助理（Claude CLI），它就知道自己叫什麼：' }), el('p', {}, [el('code', { text: line })]), cp]);
-    p.appendChild(c1); p.appendChild(c2); p.appendChild(c3); }
+    p.appendChild(c1); p.appendChild(c2); if (JARVIS_ON) p.appendChild(c3); }
 
   function pChars(p) {
     p.appendChild(el('p', { class: 'muted', text: '先從一兩個角色開始。設定寫得越具體，角色越不會呆：他是誰、怎麼說話、知道什麼、不知道什麼。（最多 3 個）' }));
@@ -145,7 +146,7 @@
       p.appendChild(card); }); }
 
   function pSet(p) { var card = el('div', { class: 'card' });
-    card.appendChild(field('助理的名字', S.jarvisName, function (v) { S.jarvisName = v; $('hi').textContent = (v || '助理') + ' 在這裡'; clearTimeout(pSet.t); pSet.t = setTimeout(saveSettings, 800); }, { id: 'sjn' }));
+    if (JARVIS_ON) card.appendChild(field('助理的名字', S.jarvisName, function (v) { S.jarvisName = v; $('hi').textContent = (v || '助理') + ' 在這裡'; clearTimeout(pSet.t); pSet.t = setTimeout(saveSettings, 800); }, { id: 'sjn' }));
     var ml = el('label', { text: '場上角色用哪個 AI 型號', for: 'smd' }), ms = el('select', { id: 'smd' }); MODELS.forEach(function (m) { var o = el('option', { value: m, text: m }); if ((S.model || MODELS[0]) === m) o.selected = true; ms.appendChild(o); });
     ms.onchange = function () { S.model = ms.value; saveSettings().then(function () { ev('model'); }); }; card.appendChild(el('div', {}, [ml, ms]));
     card.appendChild(el('p', { class: 'muted', text: '型號清單由楊老師決定。' }));
@@ -172,10 +173,10 @@
     Promise.all([ctx.db.get(path('settings')), ctx.db.get(path('project')), ctx.db.get(path('gens'))]).then(function (r) {
       S = r[0] || {}; G = r[2] || {}; try { P = r[1] ? JSON.parse(r[1]) : blank(); } catch (e) { P = blank(); }
       P.chars = P.chars || []; P.scenes = P.scenes || []; P.story = P.story || blank().story;
-      if (!S.jarvisName) { show('naming'); return; } enter();
+      if (JARVIS_ON && !S.jarvisName) { show('naming'); return; } enter();
     }).catch(function (e) { fatal('讀取你的資料失敗：' + (e && e.code || e)); });
   }
-  function enter() { $('hi').textContent = S.jarvisName + ' 在這裡'; show('app'); renderTabs(); renderPane(); ev('open'); }
+  function enter() { $('hi').textContent = JARVIS_ON ? S.jarvisName + ' 在這裡' : '提案室·實驗工坊'; show('app'); renderTabs(); renderPane(); ev('open'); }
   function fatal(m) { $('fatalMsg').textContent = m; show('fatal'); }
 
   $('nmGo').onclick = function () { var n = $('nm').value.trim(); if (!n) { $('nmErr').textContent = '先取個名字喔'; return; }
