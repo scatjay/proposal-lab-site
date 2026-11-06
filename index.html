@@ -63,9 +63,9 @@
   function lines(a) { return (a || []).join('\n'); } function unlines(s) { return s.split('\n').map(function (x) { return x.trim(); }).filter(Boolean); }
 
   /* 分頁 */
-  var TABS = [['home', '你在這裡'], ['chars', '角色'], ['scenes', '場景'], ['story', '故事'], ['evo', '進化'], ['set', '設定']];
+  var TABS = [['home', '你在這裡'], ['chars', '角色'], ['scenes', '場景'], ['story', '故事'], ['chat', '試聊'], ['evo', '進化'], ['set', '設定']];
   function renderTabs() { var t = $('tabs'); t.innerHTML = ''; TABS.forEach(function (x) { var b = el('button', { text: x[1], class: x[0] === tab ? 'on' : 'ghost' }); b.onclick = function () { tab = x[0]; renderTabs(); renderPane(); }; t.appendChild(b); }); }
-  function renderPane() { var p = $('pane'); p.innerHTML = ''; ({ home: pHome, chars: pChars, scenes: pScenes, story: pStory, evo: pEvo, set: pSet })[tab](p); }
+  function renderPane() { var p = $('pane'); p.innerHTML = ''; ({ home: pHome, chars: pChars, scenes: pScenes, story: pStory, chat: pChat, evo: pEvo, set: pSet })[tab](p); }
 
   function checks() { var c = P.chars, st = P.story, out = [];
     out.push([c.length >= 1, '至少一個角色']);
@@ -136,7 +136,7 @@
     gs.forEach(function (g) { var vl = VL[g.v] || ['', ''], c = P.chars[g.ci] || {}, card = el('div', { class: 'card' });
       card.appendChild(el('div', { class: 'row' }, [el('h2', { text: '第 ' + g.g + ' 代', style: 'margin:0' }), el('span', { class: 'tag ' + vl[1], text: vl[0] }), el('span', { class: 'muted', text: (c.name || '角色 ' + ((g.ci || 0) + 1)) + '　' + (g.f || '') + '　' + (g.t ? new Date(g.t).toLocaleString('zh-TW') : '') })]));
       if (g.why) card.appendChild(el('p', { text: '為什麼改：' + g.why }));
-      var s = g.s || {}; card.appendChild(el('p', { class: 'muted', text: '測驗：好例子 ' + ((s.gold || [0, 0])[0]) + ' / ' + ((s.gold || [0, 0])[1]) + ' 題維持或變好　紅線違反 ' + (s.redline || 0) + ' 次' }));
+      var s = g.s || {}; card.appendChild(el('p', { class: 'muted', text: '測驗：好例子 ' + ((s.gold || [0, 0])[0]) + ' / ' + ((s.gold || [0, 0])[1]) + ' 題維持或變好　紅線違反 ' + (s.redline || 0) + ' 次' })); if (s.low) card.appendChild(el('p', { class: 'muted', text: '「像」的例子還不到 10 個，這一代先當建議看，多標一些會更準。' }));
       card.appendChild(el('div', { class: 'grid' }, [el('div', {}, [el('label', { text: '改之前' }), el('pre', { text: fv(g.b), style: 'white-space:pre-wrap;margin:0;background:var(--soft-r);padding:8px;border-radius:var(--r-s)' })]),
         el('div', {}, [el('label', { text: '改之後' }), el('pre', { text: fv(g.a), style: 'white-space:pre-wrap;margin:0;background:var(--soft-g);padding:8px;border-radius:var(--r-s)' })])]));
       if (g.v === 'candidate') { var ok = el('button', { text: '接受這一代' }), no = el('button', { class: 'ghost', text: '退回' });
@@ -144,6 +144,52 @@
         no.onclick = function () { setVerdict(g, 'rejected').then(function () { ev('gen-reject'); renderPane(); }); };
         card.appendChild(el('div', { class: 'row', style: 'margin-top:10px' }, [ok, no])); }
       p.appendChild(card); }); }
+
+
+  /* 試聊：和自己的角色說話，並標「像／不像／卡住」。標註是進化（RSI）的輸入。 */
+  var chatCi = 0, chatPoll = null;
+  function pChat(p) {
+    if (!P.chars.length) { p.appendChild(el('div', { class: 'card' }, [el('h2', { text: '先做一個角色' }), el('p', { text: '到「角色」頁寫好一個角色，再回來和他說話。' })])); return; }
+    if (chatCi >= P.chars.length) chatCi = 0;
+    var top = el('div', { class: 'card' }), sel = el('select', { id: 'chc' });
+    P.chars.forEach(function (c, i) { var o = el('option', { value: String(i), text: c.name || ('角色 ' + (i + 1)) }); if (i === chatCi) o.selected = true; sel.appendChild(o); });
+    sel.onchange = function () { chatCi = Number(sel.value); renderPane(); };
+    top.appendChild(el('label', { text: '要跟誰說話', for: 'chc' })); top.appendChild(sel);
+    top.appendChild(el('p', { class: 'muted', text: '跟他聊幾句，每一句回覆下面按「像」「不像」或「卡住」。不像的話寫一句哪裡不像，系統才知道怎麼改。' }));
+    var info = el('div', { class: 'muted', id: 'chinfo' }); top.appendChild(info); p.appendChild(top);
+    var box = el('div', { class: 'card', id: 'chbox' }, [el('div', { class: 'muted', text: '讀取對話…' })]); p.appendChild(box);
+    var inp = el('textarea', { id: 'chm', placeholder: '對' + (P.chars[chatCi].name || '他') + '說的話（最多 300 字）' }), go = el('button', { text: '送出', id: 'chgo' });
+    var msg = el('span', { class: 'muted', id: 'chmsg' });
+    p.appendChild(el('div', { class: 'card' }, [el('label', { text: '你說', for: 'chm' }), inp, el('div', { class: 'row', style: 'margin-top:8px' }, [go, msg])]));
+    function render(reqs, outs, marks) {
+      box.innerHTML = ''; var ids = Object.keys(reqs).sort(), n = 0;
+      ids.forEach(function (id) { var rq = J(reqs[id]) || {}; if (Number(rq.c || 0) !== chatCi) return; n++;
+        box.appendChild(el('div', { style: 'margin:6px 0;text-align:right' }, [el('span', { class: 'tag', text: '你：' + (rq.m || '') })]));
+        var ou = J(outs[id]); var m = J(marks[id]);
+        if (!ou) { box.appendChild(el('div', { class: 'muted', text: (P.chars[chatCi].name || '角色') + ' 想一下…' })); return; }
+        if (ou.err) { box.appendChild(el('div', { class: 'tag warn', text: ({ cap: '你的額度用完了，需要增加請向楊老師提出。', 'cap-global': '今天全部人的總額度用完了，明天再試。', nochar: '找不到這個角色，先到角色頁確認。' })[ou.err] || '這次沒有回成功，再送一次。' })); return; }
+        var b = el('div', { class: 'card', style: 'margin:6px 0;padding:8px 12px' }); b.appendChild(el('div', { text: (P.chars[chatCi].name || '角色') + '：' + ou.text }));
+        var row = el('div', { class: 'row', style: 'margin-top:6px' });
+        [['like', '像'], ['unlike', '不像'], ['stuck', '卡住']].forEach(function (x) { var bt = el('button', { text: x[1], class: (m && m.v === x[0]) ? '' : 'ghost' }); bt.onclick = function () { markIt(id, x[0], note.value); }; row.appendChild(bt); });
+        var note = el('input', { placeholder: '哪裡不像／卡在哪（一句話，可不寫）', 'aria-label': '備註' }); note.value = (m && m.n) || ''; row.appendChild(note);
+        b.appendChild(row); if (m) b.appendChild(el('div', { class: 'muted', text: '已標：' + ({ like: '像', unlike: '不像', stuck: '卡住' })[m.v] })); box.appendChild(b); });
+      if (!n) box.appendChild(el('div', { class: 'muted', text: '還沒聊過。先說一句吧。' }));
+      box.scrollTop = box.scrollHeight;
+    }
+    function markIt(id, v, note) { var o = JSON.stringify({ o: id, c: chatCi, v: v, n: String(note || '').slice(0, 200), t: Date.now() });
+      ctx.db.set(path('marks/' + id), o).then(function () { ev('mark-' + v); load(); }).catch(function () { $('chmsg').textContent = '標註沒存成功'; }); }
+    function load() { Promise.all([ctx.db.get(path('req')), ctx.db.get(path('out')), ctx.db.get(path('marks')), ctx.db.get('lab/spend/' + ctx.code)]).then(function (r) {
+      var sp = r[3] || {}, cap = (sp.capNtd === undefined || sp.capNtd === null) ? DEFAULT_CAP : Number(sp.capNtd), used = Number(sp.ntd) || 0;
+      info.textContent = '目前型號：' + (S.model || MODELS[0]) + '　累積 NT$ ' + fmt(used) + ' ／ ' + fmt(cap); go.disabled = used >= cap; if (used >= cap) $('chmsg').textContent = '額度用完了，需要增加請向楊老師提出。';
+      render(r[0] || {}, r[1] || {}, r[2] || {}); var pend = Object.keys(r[0] || {}).some(function (k) { return !(r[1] || {})[k]; });
+      clearTimeout(chatPoll); if (pend && tab === 'chat') chatPoll = setTimeout(load, 1500);
+    }).catch(function (e) { box.textContent = '讀不到對話：' + (e && e.code || e); }); }
+    go.onclick = function () { var m = inp.value.trim(); if (!m) { $('chmsg').textContent = '先打一句話'; return; } if (m.length > 300) { $('chmsg').textContent = '太長了，300 字內'; return; }
+      var id = 'r' + Date.now(); go.disabled = true; $('chmsg').textContent = '';
+      ctx.db.set(path('req/' + id), JSON.stringify({ c: chatCi, m: m, t: Date.now() })).then(function () { inp.value = ''; ev('chat'); go.disabled = false; load(); }).catch(function (e) { go.disabled = false; $('chmsg').textContent = '送出失敗：' + (e && e.code || e); }); };
+    load();
+  }
+  function J(s) { try { return JSON.parse(s); } catch (e) { return null; } }
 
   function pSet(p) { var card = el('div', { class: 'card' });
     if (JARVIS_ON) card.appendChild(field('助理的名字', S.jarvisName, function (v) { S.jarvisName = v; $('hi').textContent = (v || '助理') + ' 在這裡'; clearTimeout(pSet.t); pSet.t = setTimeout(saveSettings, 800); }, { id: 'sjn' }));
