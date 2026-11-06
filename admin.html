@@ -30,6 +30,8 @@
 
   <div class="card"><h2>今天做了什麼</h2><ul id="todayList" style="margin:0;padding-left:20px"></ul><p class="muted" style="margin:6px 0 0">從操作紀錄直接算，不經過 AI。</p></div>
 
+  <div class="card"><h2>這週的實驗歷程</h2><p class="muted">最近 7 天，每天一列；右邊是「第一次」的里程碑。全部從操作紀錄算出，不經 AI。</p><div id="wkBox"></div></div>
+
   <div class="card"><h2>使用歷程</h2><p class="muted">每位學生一條線，點是她做的事，橫軸是最近 14 天。滑過點可看是什麼。</p><div id="tlBox"></div><div class="row" id="tlLegend" style="margin-top:6px"></div><ol id="tlList" class="muted" style="margin:8px 0 0;padding-left:20px"></ol></div>
 
   <div class="card"><h2>用量圖</h2><p class="muted">每天場上角色對話次數（長條）與當天花費（數字）。</p><div id="chartBox"></div></div>
@@ -99,20 +101,41 @@
 
   function renderToday(u) {
     var ul = $('todayList'); ul.innerHTML = ''; var d0 = new Date(); d0.setHours(0, 0, 0, 0); var t0 = d0.getTime(), codes = Object.keys(u);
-    codes.forEach(function (code) { var c = { open: 0, edit: 0, chat: 0, like: 0, unlike: 0, stuck: 0, acc: 0, rej: 0, tpl: 0, exp: 0 }, last = 0;
+    codes.forEach(function (code) { var c = { open: 0, edit: 0, chat: 0, like: 0, unlike: 0, stuck: 0, acc: 0, rej: 0, tpl: 0, exp: 0, rev: 0 }, last = 0;
       Object.keys((u[code] || {}).events || {}).forEach(function (k) { var e = J(u[code].events[k]); if (!e || !e.t || e.t < t0) return; last = Math.max(last, e.t);
         if (e.k === 'open') c.open++; else if (e.k === 'chat') c.chat++; else if (e.k === 'mark-like') c.like++; else if (e.k === 'mark-unlike') c.unlike++; else if (e.k === 'mark-stuck') c.stuck++;
-        else if (e.k === 'gen-accept') c.acc++; else if (e.k === 'gen-reject') c.rej++; else if (/^template-/.test(e.k)) c.tpl++; else if (e.k === 'export') c.exp++; else c.edit++; });
+        else if (e.k === 'gen-accept') c.acc++; else if (e.k === 'gen-reject') c.rej++; else if (e.k === 'gen-revise') c.rev++; else if (/^template-/.test(e.k)) c.tpl++; else if (e.k === 'export') c.exp++; else c.edit++; });
       var parts = []; if (c.open) parts.push('開啟 ' + c.open + ' 次'); if (c.tpl) parts.push('套用範例'); if (c.edit) parts.push('編輯 ' + c.edit + ' 次'); if (c.chat) parts.push('試聊 ' + c.chat + ' 句');
-      var mk = c.like + c.unlike + c.stuck; if (mk) parts.push('標註 ' + mk + ' 個（像 ' + c.like + '／不像 ' + c.unlike + '／卡住 ' + c.stuck + '）'); if (c.acc || c.rej) parts.push('進化接受 ' + c.acc + '／退回 ' + c.rej); if (c.exp) parts.push('匯出');
+      var mk = c.like + c.unlike + c.stuck; if (mk) parts.push('標註 ' + mk + ' 個（像 ' + c.like + '／不像 ' + c.unlike + '／卡住 ' + c.stuck + '）'); if (c.acc || c.rej) parts.push('進化接受 ' + c.acc + '／退回 ' + c.rej); if (c.rev) parts.push('要求調整進化 ' + c.rev + ' 次'); if (c.exp) parts.push('匯出');
       var li = document.createElement('li'); li.textContent = code + '：' + (parts.length ? '今天' + parts.join('、') + '，最後動作 ' + new Date(last).toLocaleTimeString('zh-TW', { hour: '2-digit', minute: '2-digit' }) + '。' : '今天還沒有動作。'); ul.appendChild(li); });
     if (!codes.length) { var l0 = document.createElement('li'); l0.textContent = '還沒有學生資料。'; ul.appendChild(l0); }
+  }
+
+
+  var MILE = [['首次登入', function (k) { return k === 'open'; }], ['首次建角色', function (k) { return k === 'addChar' || /^template-/.test(k); }], ['首次試聊', function (k) { return k === 'chat'; }], ['首次標註', function (k) { return /^mark-/.test(k); }], ['首次要求調整', function (k) { return k === 'gen-revise'; }], ['首次接受進化', function (k) { return k === 'gen-accept'; }], ['首次匯出', function (k) { return k === 'export'; }]];
+  function renderWeek(u) {
+    var box = $('wkBox'); box.innerHTML = ''; var DAY = 86400000, d0 = new Date(); d0.setHours(0, 0, 0, 0); var codes = Object.keys(u);
+    if (!codes.length) { box.textContent = '還沒有學生資料。'; return; }
+    codes.forEach(function (code) {
+      var evs = Object.keys((u[code] || {}).events || {}).map(function (k) { return J(u[code].events[k]); }).filter(function (e) { return e && e.t; }).sort(function (a, b) { return a.t - b.t; });
+      var h = document.createElement('h3'); h.textContent = code; h.style.margin = '10px 0 4px'; box.appendChild(h);
+      var tb = document.createElement('table'), body = document.createElement('tbody');
+      for (var i = 0; i < 7; i++) { var s0 = d0.getTime() - i * DAY, s1 = s0 + DAY, day = evs.filter(function (e) { return e.t >= s0 && e.t < s1; }), tr = document.createElement('tr');
+        var n = function (re) { return day.filter(function (e) { return re.test(e.k); }).length; };
+        var dt = new Date(s0), label = (i === 0 ? '今天' : (dt.getMonth() + 1) + '/' + dt.getDate()) + '（' + '日一二三四五六'[dt.getDay()] + '）';
+        var txt = day.length ? ['試聊 ' + n(/^chat$/) + ' 句', '標註 ' + n(/^mark-/) + ' 個', '編輯 ' + n(/^(save|addChar|model|named)$/) + ' 次', '進化 ' + n(/^gen-/) + ' 次'].join('　') + '　共 ' + day.length + ' 個動作' : '（沒有動作）';
+        var bar = document.createElement('td'); bar.style.width = '90px'; var w = Math.min(100, day.length * 4); bar.innerHTML = '<div style="height:10px;border:2px solid currentColor;border-radius:99px;overflow:hidden"><div style="height:100%;width:' + w + '%;background:#f08300"></div></div>';
+        [label, txt].forEach(function (t) { tr.appendChild(td(t)); }); tr.appendChild(bar); body.appendChild(tr); }
+      tb.appendChild(body); box.appendChild(tb);
+      var ms = document.createElement('div'); ms.className = 'muted'; ms.style.marginTop = '6px';
+      ms.textContent = '里程碑：' + MILE.map(function (m) { var e = evs.filter(function (x) { return m[1](x.k); })[0]; return m[0] + (e ? ' ' + new Date(e.t).toLocaleString('zh-TW', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '（還沒有）'); }).join('；');
+      box.appendChild(ms); });
   }
 
   function load() {
     Promise.all([ctx.db.get('lab/_wl'), ctx.db.get('lab/u'), ctx.db.get('lab/usage'), ctx.db.get('lab/spend')]).then(function (r) {
       var wl = r[0] || {}, u = r[1] || {}, use = r[2] || {}, spend = r[3] || {};
-      renderToday(u); renderTimeline(u); renderChart(use);
+      renderToday(u); renderWeek(u); renderTimeline(u); renderChart(use);
       var spb = $('spBody'); spb.innerHTML = ''; var codes = {}; Object.keys(wl).forEach(function (k) { codes[wl[k]] = 1; }); Object.keys(spend).forEach(function (k) { codes[k] = 1; });
       Object.keys(codes).forEach(function (code) { var x = spend[code] || {}, used = Number(x.ntd) || 0, cap = (x.capNtd === undefined) ? 1000 : Number(x.capNtd), tr = document.createElement('tr');
         var inp = document.createElement('input'); inp.type = 'number'; inp.min = '0'; inp.step = '100'; inp.value = cap; inp.style.width = '110px'; inp.setAttribute('aria-label', code + ' 新上限');

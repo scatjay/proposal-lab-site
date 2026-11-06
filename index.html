@@ -204,7 +204,7 @@
   function fv(x) { return Array.isArray(x) ? x.join('\n') : String(x == null ? '' : x); }
   function gensList() { return Object.keys(G).map(function (k) { var o; try { o = JSON.parse(G[k]); } catch (e) { return null; } if (o) o._id = k; return o; }).filter(Boolean).sort(function (a, b) { return (b.g || 0) - (a.g || 0); }); }
   function setVerdict(g, v) { g.v = v; var o = {}; Object.keys(g).forEach(function (k) { if (k !== '_id') o[k] = g[k]; }); G[g._id] = JSON.stringify(o); return ctx.db.set(path('gens/' + g._id), G[g._id]); }
-  var VL = { candidate: ['等你決定', 'warn'], accepted: ['你接受了', 'ok'], rejected: ['你退回了', ''] };
+  var VL = { candidate: ['等你決定', 'warn'], accepted: ['你接受了', 'ok'], rejected: ['你退回了', ''], superseded: ['已被新版取代', ''] };
   function pEvo(p) {   /* 先重新讀一次候選：代理程式隨時可能新增，不必重新整理頁面 */
     p.appendChild(el('p', { class: 'muted', text: '讀取進化紀錄…' }));
     ctx.db.get(path('gens')).then(function (g) { if (tab !== 'evo') return; G = g || {}; p.innerHTML = ''; pEvoBody(p); }).catch(function () { p.textContent = '讀不到進化紀錄，請重新整理。'; });
@@ -218,13 +218,18 @@
     gs.forEach(function (g) { var vl = VL[g.v] || ['', ''], c = P.chars[g.ci] || {}, card = el('div', { class: 'card' });
       card.appendChild(el('div', { class: 'row' }, [el('h2', { text: '第 ' + g.g + ' 代', style: 'margin:0' }), el('span', { class: 'tag ' + vl[1], text: vl[0] }), el('span', { class: 'muted', text: (c.name || '角色 ' + ((g.ci || 0) + 1)) + '　' + (g.f || '') + '　' + (g.t ? new Date(g.t).toLocaleString('zh-TW') : '') })]));
       if (g.why) card.appendChild(el('p', { text: '為什麼改：' + g.why }));
+      if (g.fb) card.appendChild(el('p', { class: 'muted', text: '你的意見：' + g.fb + (g.from ? '（接在第 ' + g.from + ' 代之後）' : '') }));
+      if (g.ev && g.ev.length) { var evd = el('details'); evd.appendChild(el('summary', { text: '依據你標的 ' + g.ev.length + ' 句對話（點開看）' })); var evl = el('ul', { class: 'muted' }); g.ev.forEach(function (x) { evl.appendChild(el('li', { text: '【' + ({ like: '像', unlike: '不像', stuck: '卡住' }[x.v] || x.v) + '】你說：' + x.q + '／他答：' + x.a + (x.n ? '／你的備註：' + x.n : '') })); }); evd.appendChild(evl); card.appendChild(evd); }
       var s = g.s || {}; card.appendChild(el('p', { class: 'muted', text: '測驗：好例子 ' + ((s.gold || [0, 0])[0]) + ' / ' + ((s.gold || [0, 0])[1]) + ' 題維持或變好　紅線違反 ' + (s.redline || 0) + ' 次' })); if (s.low) card.appendChild(el('p', { class: 'muted', text: '「像」的例子還不到 10 個，這一代先當建議看，多標一些會更準。' }));
       card.appendChild(el('div', { class: 'grid' }, [el('div', {}, [el('label', { text: '改之前' }), el('pre', { text: fv(g.b), style: 'white-space:pre-wrap;margin:0;background:var(--soft-r);padding:8px;border-radius:var(--r-s)' })]),
         el('div', {}, [el('label', { text: '改之後' }), el('pre', { text: fv(g.a), style: 'white-space:pre-wrap;margin:0;background:var(--soft-g);padding:8px;border-radius:var(--r-s)' })])]));
       if (g.v === 'candidate') { var ok = el('button', { text: '接受這一代' }), no = el('button', { class: 'ghost', text: '退回' });
         ok.onclick = function () { var ch = P.chars[g.ci]; if (ch && g.f) { ch[g.f] = Array.isArray(ch[g.f]) ? unlines(fv(g.a)) : fv(g.a); } setVerdict(g, 'accepted').then(function () { save(); ev('gen-accept'); renderPane(); }); };
         no.onclick = function () { setVerdict(g, 'rejected').then(function () { ev('gen-reject'); renderPane(); }); };
-        card.appendChild(el('div', { class: 'row', style: 'margin-top:10px' }, [ok, no])); }
+        card.appendChild(el('div', { class: 'row', style: 'margin-top:10px' }, [ok, no]));
+        var rv = el('input', { placeholder: '不想照這樣改？寫一句你要的方向，例如：不要這麼冷淡', 'aria-label': '對這一代的意見', maxlength: '200' }), rb = el('button', { class: 'ghost', text: '我想調整' }), rm = el('span', { class: 'muted' });
+        rb.onclick = function () { var t = rv.value.trim(); if (!t) { rm.textContent = '先寫一句意見'; return; } ctx.db.set(path('marks/rv_' + g._id), JSON.stringify({ o: g._id, c: g.ci, v: 'revise', n: t.slice(0, 200), t: Date.now() })).then(function () { ev('gen-revise'); rm.textContent = '已送出，系統會照你的意見重寫一版，稍後回來看。'; rb.disabled = true; }).catch(function () { rm.textContent = '送出失敗'; }); };
+        card.appendChild(el('div', { class: 'row', style: 'margin-top:8px' }, [rv, rb, rm])); }
       p.appendChild(card); }); }
 
 
