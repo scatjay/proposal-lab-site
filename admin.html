@@ -131,7 +131,7 @@
         var n = function (re) { return day.filter(function (e) { return re.test(e.k); }).length; };
         var dt = new Date(s0), label = (i === 0 ? '今天' : (dt.getMonth() + 1) + '/' + dt.getDate()) + '（' + '日一二三四五六'[dt.getDay()] + '）';
         var txt = day.length ? ['試聊 ' + n(/^chat$/) + ' 句', '標註 ' + n(/^mark-/) + ' 個', '編輯 ' + n(/^(save|addChar|model|named)$/) + ' 次', '進化 ' + n(/^gen-/) + ' 次'].join('　') + '　共 ' + day.length + ' 個動作' : '（沒有動作）';
-        var bar = document.createElement('td'); bar.style.width = '90px'; var w = Math.min(100, day.length * 4); bar.innerHTML = '<div style="height:10px;border:2px solid currentColor;border-radius:99px;overflow:hidden"><div style="height:100%;width:' + w + '%;background:#f08300"></div></div>';
+        var bar = document.createElement('td'); bar.setAttribute('aria-hidden', 'true'); bar.style.width = '90px';   /* 長條只是文字的視覺輔助（同一列已有「共 N 個動作」），螢幕閱讀器略過 */ var w = Math.min(100, day.length * 4); bar.innerHTML = '<div style="height:10px;border:2px solid currentColor;border-radius:99px;overflow:hidden"><div style="height:100%;width:' + w + '%;background:#f08300"></div></div>';
         [label, txt].forEach(function (t) { tr.appendChild(td(t)); }); tr.appendChild(bar); body.appendChild(tr); }
       tb.appendChild(body); box.appendChild(tb);
       var ms = document.createElement('div'); ms.className = 'muted'; ms.style.marginTop = '6px';

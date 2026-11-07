@@ -230,7 +230,7 @@
     var gl = el('label', { text: '主持人（GM）：由哪個角色引導故事？', for: 'stgm' }), gs = el('select', { id: 'stgm' }); gs.appendChild(el('option', { value: '', text: '（不設主持人）' }));
     P.chars.forEach(function (c, i) { var o = el('option', { value: String(i), text: c.name || ('角色 ' + (i + 1)) }); if (String(st.gm) === String(i)) o.selected = true; gs.appendChild(o); });
     gs.onchange = function () { st.gm = gs.value; save(); }; card.appendChild(el('div', {}, [gl, gs]));
-    var bw = el('input', { type: 'checkbox', id: 'stbw' }); bw.checked = !!st.breakWall; bw.style.width = 'auto'; bw.onchange = function () { st.breakWall = bw.checked; save(); };
+    var bw = el('input', { type: 'checkbox', id: 'stbw' }); bw.checked = !!st.breakWall; bw.style.width = '24px'; bw.style.height = '24px'; bw.style.flex = 'none'; bw.onchange = function () { st.breakWall = bw.checked; save(); };
     card.appendChild(el('div', { class: 'row', style: 'margin-top:12px' }, [bw, el('label', { text: '打破第四面牆（玩家其實是外面的設計師，可以進去改變角色或環境）', for: 'stbw', style: 'margin:0' })]));
     p.appendChild(card); }
 
