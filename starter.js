@@ -62,7 +62,11 @@
     L.push('## 五、試聊標註'); L.push(''); L.push('- 像：' + cnt.like + ' 個；不像：' + cnt.unlike + ' 個；卡住：' + cnt.stuck + ' 個'); L.push('');
     var shown = 0; marks.sort(function (a, b) { return (a.t || 0) - (b.t || 0); }).forEach(function (m) { if (shown >= 12) return; var q = J((o.req || {})[m.id]) || {}, a = J((o.out || {})[m.id]) || {}; if (!a.text) return; shown++;
       L.push('- 【' + ({ like: '像', unlike: '不像', stuck: '卡住' }[m.v] || m.v) + '】玩家：' + (q.m || '') + '／角色：' + a.text + (m.n ? '／備註：' + m.n : '')); });
-    L.push(''); L.push('## 六、使用的 AI'); L.push(''); L.push('- 場上角色型號：' + (o.model || '')); L.push('- 累積花費：NT$ ' + (o.used || 0) + ' ／ ' + (o.cap || '') + '（上限由老師設定）'); L.push('');
+    L.push(''); L.push('## 六、Demo 紀錄'); L.push('');
+    var dm = Object.keys(o.demos || {}).sort().map(function (k) { return J(o.demos[k]); }).filter(Boolean);
+    dm.forEach(function (x, i) { L.push('### Demo ' + (i + 1) + '：' + (x.d || '') + '　' + (x.w || '') + '，約 ' + (x.m || '?') + ' 分鐘'); if (x.did) L.push('- 玩了什麼：' + x.did); if (x.like) L.push('- 喜歡：' + x.like); if (x.stuck) L.push('- 卡住或困惑：' + x.stuck); if (x.want) L.push('- 想改：' + x.want); L.push(''); });
+    if (!dm.length) { L.push('（還沒有 Demo 紀錄）'); L.push(''); }
+    L.push('## 七、使用的 AI'); L.push(''); L.push('- 場上角色型號：' + (o.model || '')); L.push('- 累積花費：NT$ ' + (o.used || 0) + ' ／ ' + (o.cap || '') + '（上限由老師設定）'); L.push('');
     return L.join('\n');
   }
   window.LABX = { templates: TEMPLATES, exportMd: exportMd, quadName: quadName };

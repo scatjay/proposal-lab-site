@@ -30,6 +30,8 @@
 
   <div class="card"><h2>今天做了什麼</h2><ul id="todayList" style="margin:0;padding-left:20px"></ul><p class="muted" style="margin:6px 0 0">從操作紀錄直接算，不經過 AI。</p></div>
 
+  <div class="card"><h2>實驗指標</h2><p class="muted">回答「學生能做到什麼程度」。前面是自動算的；最後一欄「完成度」是你的主觀評分（1–5）加一句簡述，只有你看得到。</p><div class="tbl"><table><thead><tr><th>代碼</th><th>登入→首次試聊</th><th>試聊句數</th><th>標註 像／不像／卡住</th><th>進化 產生／接受／退回</th><th>最高設定深度</th><th>Demo 次數</th><th>花費</th><th>完成度（你評）</th></tr></thead><tbody id="mxBody"></tbody></table></div><div class="muted" id="mxMsg"></div><div id="dmList" style="margin-top:8px"></div></div>
+
   <div class="card"><h2>新手引導成效</h2><p class="muted">7 步引導的完成情形，從操作紀錄計算（不經 AI）。「卡關」是停在某一步超過 30 分鐘還沒進到下一步。</p><div id="gdSum" style="font-weight:700;margin-bottom:8px"></div><div class="tbl"><table><thead><tr><th>步驟</th><th>到達</th><th>通過</th><th>跳過</th><th>帶我去</th><th>平均停留</th></tr></thead><tbody id="gdBody"></tbody></table></div><ul id="gdStu" class="muted" style="margin:8px 0 0;padding-left:20px"></ul></div>
 
   <div class="card"><h2>這週的實驗歷程</h2><p class="muted">最近 7 天，每天一列；右邊是「第一次」的里程碑。全部從操作紀錄算出，不經 AI。</p><div id="wkBox"></div></div>
@@ -97,6 +99,7 @@
         for (var i = 0; i < kinds.length * 2; i++) { var t = now - (st[2] - (i / 2) * (st[2] / kinds.length)) * DAY * 0.9 - si * 3600000; ps.push(db.set('lab/u/' + st[0] + '/events/e' + i, JSON.stringify({ k: kinds[i % kinds.length], t: Math.round(t) }))); }
         for (var gi = 0; gi < (si ? 4 : 7); gi++) ps.push(db.set('lab/u/' + st[0] + '/events/gs' + gi, JSON.stringify({ k: 'guide-show-' + gi, t: Math.round(now - (si ? 3 : 8) * DAY + gi * 1800000 * (gi + 1)) })));
         if (!si) { ps.push(db.set('lab/u/' + st[0] + '/events/gdone', JSON.stringify({ k: 'guide-done', t: Math.round(now - 7 * DAY + 20 * 3600000) }))); ps.push(db.set('lab/u/' + st[0] + '/events/gsk', JSON.stringify({ k: 'guide-skip-2', t: Math.round(now - 8 * DAY + 3 * 3600000) }))); }
+        ps.push(db.set('lab/u/' + st[0] + '/demo/d1', JSON.stringify({ d: '2026-11-20', w: '同學', m: 12, did: '跟小明聊了十分鐘', like: '回答很自然', stuck: '不知道怎麼問第二句', want: '加一個提示', t: now - 2 * DAY })));
         ps.push(db.set('lab/spend/' + st[0], { ntd: si ? 12.3 : 87.6, capNtd: 1000, calls: si ? 40 : 210, tokIn: 90000, tokOut: 12000, updatedAt: now })); });
       for (var d = 0; d < 9; d++) { var dt = new Date(now - d * DAY), k = dt.getFullYear() + '-' + String(dt.getMonth() + 1).padStart(2, '0') + '-' + String(dt.getDate()).padStart(2, '0'); ps.push(db.set('lab/usage/' + k, { 'lab-demo1': { turns: 5 + (d * 7) % 23, tokIn: 8000, tokOut: 900, ntd: 3 + (d * 5) % 11 }, 'lab-demo2': { turns: (d * 3) % 9, tokIn: 2000, tokOut: 300, ntd: (d * 2) % 4 } })); }
       return Promise.all(ps); });
@@ -105,12 +108,12 @@
 
   function renderToday(u) {
     var ul = $('todayList'); ul.innerHTML = ''; var d0 = new Date(); d0.setHours(0, 0, 0, 0); var t0 = d0.getTime(), codes = Object.keys(u);
-    codes.forEach(function (code) { var c = { open: 0, edit: 0, chat: 0, like: 0, unlike: 0, stuck: 0, acc: 0, rej: 0, tpl: 0, exp: 0, rev: 0 }, last = 0;
+    codes.forEach(function (code) { var c = { open: 0, edit: 0, chat: 0, like: 0, unlike: 0, stuck: 0, acc: 0, rej: 0, tpl: 0, exp: 0, rev: 0, demo: 0 }, last = 0;
       Object.keys((u[code] || {}).events || {}).forEach(function (k) { var e = J(u[code].events[k]); if (!e || !e.t || e.t < t0) return; last = Math.max(last, e.t);
         if (e.k === 'open') c.open++; else if (e.k === 'chat') c.chat++; else if (e.k === 'mark-like') c.like++; else if (e.k === 'mark-unlike') c.unlike++; else if (e.k === 'mark-stuck') c.stuck++;
-        else if (e.k === 'gen-accept') c.acc++; else if (e.k === 'gen-reject') c.rej++; else if (e.k === 'gen-revise') c.rev++; else if (/^template-/.test(e.k)) c.tpl++; else if (e.k === 'export') c.exp++; else if (/^guide-/.test(e.k)) { } else c.edit++; });
+        else if (e.k === 'gen-accept') c.acc++; else if (e.k === 'gen-reject') c.rej++; else if (e.k === 'gen-revise') c.rev++; else if (/^template-/.test(e.k)) c.tpl++; else if (e.k === 'export') c.exp++; else if (e.k === 'demo') c.demo++; else if (/^guide-/.test(e.k)) { } else c.edit++; });
       var parts = []; if (c.open) parts.push('開啟 ' + c.open + ' 次'); if (c.tpl) parts.push('套用範例'); if (c.edit) parts.push('編輯 ' + c.edit + ' 次'); if (c.chat) parts.push('試聊 ' + c.chat + ' 句');
-      var mk = c.like + c.unlike + c.stuck; if (mk) parts.push('標註 ' + mk + ' 個（像 ' + c.like + '／不像 ' + c.unlike + '／卡住 ' + c.stuck + '）'); if (c.acc || c.rej) parts.push('進化接受 ' + c.acc + '／退回 ' + c.rej); if (c.rev) parts.push('要求調整進化 ' + c.rev + ' 次'); if (c.exp) parts.push('匯出');
+      var mk = c.like + c.unlike + c.stuck; if (mk) parts.push('標註 ' + mk + ' 個（像 ' + c.like + '／不像 ' + c.unlike + '／卡住 ' + c.stuck + '）'); if (c.acc || c.rej) parts.push('進化接受 ' + c.acc + '／退回 ' + c.rej); if (c.rev) parts.push('要求調整進化 ' + c.rev + ' 次'); if (c.demo) parts.push('記了 ' + c.demo + ' 次 Demo'); if (c.exp) parts.push('匯出');
       var li = document.createElement('li'); li.textContent = code + '：' + (parts.length ? '今天' + parts.join('、') + '，最後動作 ' + new Date(last).toLocaleTimeString('zh-TW', { hour: '2-digit', minute: '2-digit' }) + '。' : '今天還沒有動作。'); ul.appendChild(li); });
     if (!codes.length) { var l0 = document.createElement('li'); l0.textContent = '還沒有學生資料。'; ul.appendChild(l0); }
   }
@@ -161,10 +164,34 @@
     var ul = $('gdStu'); ul.innerHTML = ''; lines.forEach(function (t) { var li = document.createElement('li'); li.textContent = t; ul.appendChild(li); });
   }
 
+
+  function depthMax(project) {
+    return Math.max.apply(null, [0].concat((project.chars || []).map(function (c) { var s = 0; if ((c.name || '').trim()) s += 10; if ((c.bio || '').length >= 40) s += 15; if ((c.bio || '').length >= 80) s += 10; if ((c.speech || '').length >= 20) s += 15; if ((c.knows || []).length >= 3) s += 15; if ((c.unknown || []).length >= 1) s += 10; if ((c.rules || []).length >= 2) s += 15; if (c.coord) s += 10; return s; })));
+  }
+  function renderMetrics(u, spend, rate) {
+    var body = $('mxBody'); body.innerHTML = ''; var dl = $('dmList'); dl.innerHTML = ''; var codes = Object.keys(u);
+    codes.forEach(function (code) { var x = u[code] || {}, pr = J(x.project) || {}, evs = Object.keys(x.events || {}).map(function (k) { return J(x.events[k]); }).filter(function (e) { return e && e.t; }).sort(function (p, q) { return p.t - q.t; });
+      var open = evs.filter(function (e) { return e.k === 'open'; })[0], chat = evs.filter(function (e) { return e.k === 'chat'; })[0], dtm = open && chat ? Math.round((chat.t - open.t) / 60000) : null;
+      var mk = Object.keys(x.marks || {}).map(function (k) { return J(x.marks[k]) || {}; }), n = function (v) { return mk.filter(function (m) { return m.v === v; }).length; };
+      var gens = Object.keys(x.gens || {}).map(function (k) { return J(x.gens[k]) || {}; }), gc = function (v) { return gens.filter(function (g) { return g.v === v; }).length; }, made = gens.length, acc = gc('accepted'), rej = gc('rejected');
+      var dem = Object.keys(x.demo || {}).map(function (k) { return J(x.demo[k]) || {}; }), sp = (spend[code] || {}), r = rate[code] || {};
+      var tr = document.createElement('tr');
+      [code, dtm === null ? '—' : (dtm >= 120 ? Math.round(dtm / 60) + ' 小時' : dtm + ' 分'), String(Object.keys(x.req || {}).length), n('like') + ' ／ ' + n('unlike') + ' ／ ' + n('stuck'),
+       made + ' ／ ' + acc + ' ／ ' + rej + (made ? '（接受 ' + Math.round(acc / made * 100) + '%）' : ''), String(depthMax(pr)), String(dem.length), 'NT$ ' + (Number(sp.ntd) || 0).toFixed(2)].forEach(function (t) { tr.appendChild(td(t)); });
+      var c9 = document.createElement('td'), sel = document.createElement('select'); sel.setAttribute('aria-label', code + ' 完成度');
+      ['—', '1', '2', '3', '4', '5'].forEach(function (v) { var o = document.createElement('option'); o.value = v; o.textContent = v; if (String(r.score || '—') === v) o.selected = true; sel.appendChild(o); });
+      var note = document.createElement('input'); note.placeholder = '一句簡述'; note.value = r.note || ''; note.style.width = '150px'; note.setAttribute('aria-label', code + ' 評語');
+      var sv = document.createElement('button'); sv.textContent = '存'; sv.onclick = function () { if (sel.value === '—') { $('mxMsg').textContent = '先選 1–5'; return; } ctx.db.set('lab/rate/' + code, { score: Number(sel.value), note: note.value.trim().slice(0, 300), t: Date.now() }).then(function () { $('mxMsg').textContent = code + ' 完成度已存'; }).catch(function (e) { $('mxMsg').textContent = '存失敗：' + (e && e.code || e); }); };
+      c9.appendChild(sel); c9.appendChild(document.createTextNode(' ')); c9.appendChild(note); c9.appendChild(document.createTextNode(' ')); c9.appendChild(sv); tr.appendChild(c9); body.appendChild(tr);
+      if (dem.length) { var h = document.createElement('div'); h.style.margin = '6px 0'; h.innerHTML = ''; var st = document.createElement('strong'); st.textContent = code + ' 的 Demo 回饋'; h.appendChild(st);
+        dem.sort(function (p, q) { return (q.t || 0) - (p.t || 0); }).forEach(function (d) { var di = document.createElement('div'); di.className = 'muted'; di.textContent = (d.d || '') + '　' + (d.w || '') + '　' + (d.m || '?') + ' 分鐘｜喜歡：' + (d.like || '—') + '｜卡住：' + (d.stuck || '—') + '｜想改：' + (d.want || '—'); h.appendChild(di); }); dl.appendChild(h); } });
+    if (!codes.length) { var e0 = document.createElement('tr'); e0.appendChild(td('（尚無學生）')); body.appendChild(e0); }
+  }
+
   function load() {
-    Promise.all([ctx.db.get('lab/_wl'), ctx.db.get('lab/u'), ctx.db.get('lab/usage'), ctx.db.get('lab/spend')]).then(function (r) {
-      var wl = r[0] || {}, u = r[1] || {}, use = r[2] || {}, spend = r[3] || {};
-      renderToday(u); renderGuideStats(u); renderWeek(u); renderTimeline(u); renderChart(use);
+    Promise.all([ctx.db.get('lab/_wl'), ctx.db.get('lab/u'), ctx.db.get('lab/usage'), ctx.db.get('lab/spend'), ctx.db.get('lab/rate')]).then(function (r) {
+      var wl = r[0] || {}, u = r[1] || {}, use = r[2] || {}, spend = r[3] || {}, rate = r[4] || {};
+      renderToday(u); renderMetrics(u, spend, rate); renderGuideStats(u); renderWeek(u); renderTimeline(u); renderChart(use);
       var spb = $('spBody'); spb.innerHTML = ''; var codes = {}; Object.keys(wl).forEach(function (k) { codes[wl[k]] = 1; }); Object.keys(spend).forEach(function (k) { codes[k] = 1; });
       Object.keys(codes).forEach(function (code) { var x = spend[code] || {}, used = Number(x.ntd) || 0, cap = (x.capNtd === undefined) ? 1000 : Number(x.capNtd), tr = document.createElement('tr');
         var inp = document.createElement('input'); inp.type = 'number'; inp.min = '0'; inp.step = '100'; inp.value = cap; inp.style.width = '110px'; inp.setAttribute('aria-label', code + ' 新上限');

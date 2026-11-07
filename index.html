@@ -37,7 +37,7 @@
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-database-compat.js"></script>
 <script src="lab.js?v=4"></script>
-<script src="starter.js?v=1"></script>
+<script src="starter.js?v=2"></script>
 <script>
 (function () {
   var $ = function (i) { return document.getElementById(i); };
@@ -65,9 +65,9 @@
   function lines(a) { return (a || []).join('\n'); } function unlines(s) { return s.split('\n').map(function (x) { return x.trim(); }).filter(Boolean); }
 
   /* 分頁 */
-  var TABS = [['home', '你在這裡'], ['chars', '角色'], ['scenes', '場景'], ['story', '故事'], ['chat', '試聊'], ['evo', '進化'], ['set', '設定']];
+  var TABS = [['home', '你在這裡'], ['chars', '角色'], ['scenes', '場景'], ['story', '故事'], ['chat', '試聊'], ['evo', '進化'], ['demo', 'Demo'], ['set', '設定']];
   function renderTabs() { var t = $('tabs'); t.innerHTML = ''; TABS.forEach(function (x) { var b = el('button', { text: x[1], class: x[0] === tab ? 'on' : 'ghost' }); b.onclick = function () { tab = x[0]; renderTabs(); renderPane(); }; t.appendChild(b); }); }
-  function renderPane() { var p = $('pane'); p.innerHTML = ''; ({ home: pHome, chars: pChars, scenes: pScenes, story: pStory, chat: pChat, evo: pEvo, set: pSet })[tab](p); renderGuide(); }
+  function renderPane() { var p = $('pane'); p.innerHTML = ''; ({ home: pHome, chars: pChars, scenes: pScenes, story: pStory, chat: pChat, evo: pEvo, demo: pDemo, set: pSet })[tab](p); renderGuide(); }
 
   function checks() { var c = P.chars, st = P.story, out = [];
     out.push([c.length >= 1, '至少一個角色']);
@@ -121,8 +121,8 @@
     var card = el('div', { class: 'card' }, [el('h2', { text: '匯出成 Markdown（給期末作業）' }), el('p', { class: 'muted', text: '把故事、場景、角色、進化紀錄和試聊標註整理成一份文件。' })]);
     var go = el('button', { text: '產生匯出內容' }), out = el('div'); card.appendChild(go); card.appendChild(out);
     go.onclick = function () { out.textContent = '整理中…';
-      Promise.all([ctx.db.get(path('gens')), ctx.db.get(path('marks')), ctx.db.get(path('req')), ctx.db.get(path('out')), ctx.db.get('lab/spend/' + ctx.code)]).then(function (r) {
-        var sp = r[4] || {}, md = LABX.exportMd({ project: P, gens: r[0] || {}, marks: r[1] || {}, req: r[2] || {}, out: r[3] || {}, model: S.model || MODELS[0], used: Number(sp.ntd) || 0, cap: (sp.capNtd === undefined || sp.capNtd === null) ? DEFAULT_CAP : sp.capNtd });
+      Promise.all([ctx.db.get(path('gens')), ctx.db.get(path('marks')), ctx.db.get(path('req')), ctx.db.get(path('out')), ctx.db.get('lab/spend/' + ctx.code), ctx.db.get(path('demo'))]).then(function (r) {
+        var sp = r[4] || {}, md = LABX.exportMd({ demos: r[5] || {}, project: P, gens: r[0] || {}, marks: r[1] || {}, req: r[2] || {}, out: r[3] || {}, model: S.model || MODELS[0], used: Number(sp.ntd) || 0, cap: (sp.capNtd === undefined || sp.capNtd === null) ? DEFAULT_CAP : sp.capNtd });
         out.innerHTML = ''; var ta = el('textarea', { readonly: 'readonly', rows: '14', 'aria-label': '匯出的 Markdown', style: 'margin-top:10px' }); ta.value = md;
         var dl = el('button', { text: '下載 .md 檔' }), cp = el('button', { class: 'ghost', text: '複製全文' }), msg = el('span', { class: 'muted' });
         dl.onclick = function () { try { var a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([md], { type: 'text/markdown;charset=utf-8' })); a.download = '提案室實驗-' + new Date().toISOString().slice(0, 10) + '.md'; document.body.appendChild(a); a.click(); a.remove(); ev('export'); msg.textContent = '已下載'; } catch (e) { msg.textContent = '下載沒成功，請用複製'; } };
@@ -329,6 +329,33 @@
     load();
   }
   function J(s) { try { return JSON.parse(s); } catch (e) { return null; } }
+
+
+  /* Demo 紀錄：期末前至少做一次 10 分鐘的 demo（給同學、家人或真的使用者玩），記下他們的回饋。不寫對方的真實姓名。 */
+  var WHO = ['同學', '家人或朋友', '可能的使用者／客戶', '老師', '其他'];
+  function pDemo(p) {
+    var form = el('div', { class: 'card' }, [el('h2', { text: '記一次 Demo' }), el('p', { class: 'muted', text: '找一個人，讓他玩你的角色約 10 分鐘，然後問他三個問題。對方只寫身分，不寫姓名。' })]);
+    var d = el('input', { id: 'dmDate', type: 'date' }); d.value = new Date().toISOString().slice(0, 10);
+    var who = el('select', { id: 'dmWho' }); WHO.forEach(function (w) { who.appendChild(el('option', { value: w, text: w })); });
+    var mins = el('input', { id: 'dmMin', type: 'number', min: '1', max: '120' }); mins.value = '10';
+    function ta(id, lab, ph) { var t = el('textarea', { id: id, placeholder: ph || '' }); return [el('label', { text: lab, for: id }), t]; }
+    var f1 = ta('dmDid', '他玩了什麼', '例如：跟小禾聊了用藥習慣'), f2 = ta('dmLike', '他喜歡什麼', '他說好玩、有感覺的地方'), f3 = ta('dmStuck', '他哪裡卡住或困惑', '不知道怎麼問、角色答得奇怪的地方'), f4 = ta('dmWant', '他想改什麼／我想改什麼', '下一次要改的事');
+    var save = el('button', { text: '存這一筆' }), msg = el('span', { class: 'muted' });
+    [el('label', { text: '日期', for: 'dmDate' }), d, el('label', { text: '對象', for: 'dmWho' }), who, el('label', { text: '大約幾分鐘', for: 'dmMin' }), mins].concat(f1, f2, f3, f4).forEach(function (n) { form.appendChild(n); });
+    form.appendChild(el('div', { class: 'row', style: 'margin-top:10px' }, [save, msg])); p.appendChild(form);
+    var list = el('div', { class: 'card' }, [el('h2', { text: '已記的 Demo' }), el('div', { class: 'muted', text: '讀取中…' })]); p.appendChild(list);
+    function load() { ctx.db.get(path('demo')).then(function (r) { r = r || {}; list.innerHTML = ''; list.appendChild(el('h2', { text: '已記的 Demo（' + Object.keys(r).length + ' 次）' }));
+      Object.keys(r).sort().reverse().forEach(function (k) { var x = J(r[k]) || {}, row = el('div', { style: 'margin:8px 0;padding-top:8px;border-top:var(--bw-s) solid var(--line)' });
+        row.appendChild(el('div', { class: 'row' }, [el('strong', { text: (x.d || '') + '　' + (x.w || '') + '　約 ' + (x.m || '?') + ' 分鐘' })]));
+        [['玩了什麼', x.did], ['喜歡', x.like], ['卡住／困惑', x.stuck], ['想改', x.want]].forEach(function (z) { if (z[1]) row.appendChild(el('div', { text: z[0] + '：' + z[1] })); });
+        var del = el('button', { class: 'ghost', text: '刪除' }); del.onclick = function () { if (del.dataset.arm !== '1') { del.dataset.arm = '1'; del.textContent = '再按一次確認'; setTimeout(function () { del.dataset.arm = ''; del.textContent = '刪除'; }, 5000); return; } ctx.db.remove(path('demo/' + k)).then(load); };
+        row.appendChild(el('div', { style: 'margin-top:4px' }, [del])); list.appendChild(row); });
+      if (!Object.keys(r).length) list.appendChild(el('p', { class: 'muted', text: '還沒有。做完第一次 Demo 就回來記。' })); }).catch(function (e) { list.textContent = '讀不到：' + (e && e.code || e); }); }
+    save.onclick = function () { var o = { d: d.value, w: who.value, m: Number(mins.value) || 10, did: $('dmDid').value.trim().slice(0, 400), like: $('dmLike').value.trim().slice(0, 400), stuck: $('dmStuck').value.trim().slice(0, 400), want: $('dmWant').value.trim().slice(0, 400), t: Date.now() };
+      if (!o.did && !o.like && !o.stuck && !o.want) { msg.textContent = '至少寫一欄'; return; }
+      ctx.db.set(path('demo/d' + Date.now()), JSON.stringify(o)).then(function () { ev('demo'); msg.textContent = '已存'; ['dmDid', 'dmLike', 'dmStuck', 'dmWant'].forEach(function (i) { $(i).value = ''; }); load(); }).catch(function (e) { msg.textContent = '存失敗：' + (e && e.code || e); }); };
+    load();
+  }
 
   function pSet(p) { var card = el('div', { class: 'card' });
     if (JARVIS_ON) card.appendChild(field('助理的名字', S.jarvisName, function (v) { S.jarvisName = v; $('hi').textContent = (v || '助理') + ' 在這裡'; clearTimeout(pSet.t); pSet.t = setTimeout(saveSettings, 800); }, { id: 'sjn' }));
