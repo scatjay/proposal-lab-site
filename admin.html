@@ -30,6 +30,8 @@
 
   <div class="card"><h2>今天做了什麼</h2><ul id="todayList" style="margin:0;padding-left:20px"></ul><p class="muted" style="margin:6px 0 0">從操作紀錄直接算，不經過 AI。</p></div>
 
+  <div class="card"><h2>新手引導成效</h2><p class="muted">7 步引導的完成情形，從操作紀錄計算（不經 AI）。「卡關」是停在某一步超過 30 分鐘還沒進到下一步。</p><div id="gdSum" style="font-weight:700;margin-bottom:8px"></div><div class="tbl"><table><thead><tr><th>步驟</th><th>到達</th><th>通過</th><th>跳過</th><th>帶我去</th><th>平均停留</th></tr></thead><tbody id="gdBody"></tbody></table></div><ul id="gdStu" class="muted" style="margin:8px 0 0;padding-left:20px"></ul></div>
+
   <div class="card"><h2>這週的實驗歷程</h2><p class="muted">最近 7 天，每天一列；右邊是「第一次」的里程碑。全部從操作紀錄算出，不經 AI。</p><div id="wkBox"></div></div>
 
   <div class="card"><h2>使用歷程</h2><p class="muted">每位學生一條線，點是她做的事，橫軸是最近 14 天。滑過點可看是什麼。</p><div id="tlBox"></div><div class="row" id="tlLegend" style="margin-top:6px"></div><ol id="tlList" class="muted" style="margin:8px 0 0;padding-left:20px"></ol></div>
@@ -66,7 +68,7 @@
     var DAY = 86400000, now = Date.now(), t0 = now - 14 * DAY, W = 640, LM = 90, codes = Object.keys(u), H = 28 + codes.length * 30 + 10, all = [];
     var box = $('tlBox'); box.innerHTML = ''; var svgEl = svg('svg', { viewBox: '0 0 ' + W + ' ' + H, width: '100%', role: 'img', 'aria-label': '學生使用歷程時間軸', style: 'max-width:100%;color:var(--fg)' });
     for (var d = 0; d <= 14; d += 2) { var x = LM + (W - LM - 10) * d / 14, dt = new Date(t0 + d * DAY); svgEl.appendChild(svg('line', { x1: x, y1: 18, x2: x, y2: H - 6, stroke: 'currentColor', 'stroke-opacity': 0.15 })); svgEl.appendChild(stxt(x, 12, (dt.getMonth() + 1) + '/' + dt.getDate(), 'middle')); }
-    codes.forEach(function (code, i) { var y = 40 + i * 30, evs = Object.keys((u[code] || {}).events || {}).map(function (k) { return J(u[code].events[k]); }).filter(function (e) { return e && e.t; });
+    codes.forEach(function (code, i) { var y = 40 + i * 30, evs = Object.keys((u[code] || {}).events || {}).map(function (k) { return J(u[code].events[k]); }).filter(function (e) { return e && e.t && !/^guide-/.test(e.k); });
       svgEl.appendChild(stxt(4, y + 4, code)); svgEl.appendChild(svg('line', { x1: LM, y1: y, x2: W - 10, y2: y, stroke: 'currentColor', 'stroke-opacity': 0.3 }));
       evs.forEach(function (e) { all.push({ c: code, k: e.k, t: e.t }); if (e.t < t0) return; var g = EVG[e.k] || ['其他', '#999'], cx = LM + (W - LM - 10) * (e.t - t0) / (14 * DAY), dot = svg('circle', { cx: cx, cy: y, r: 5, fill: g[1], stroke: 'currentColor', 'stroke-width': 1.5 });
         dot.appendChild(svg('title', {}, [document.createTextNode(code + '　' + (EVL[e.k] || e.k) + '　' + new Date(e.t).toLocaleString('zh-TW'))])); svgEl.appendChild(dot); }); });
@@ -93,6 +95,8 @@
         ps.push(db.set('lab/u/' + st[0] + '/project', JSON.stringify({ v: 1, chars: [{ name: '小明', coord: { x: 0.3, y: 0.7 } }], scenes: [{ name: '急診室', rooms: [] }], story: {} })));
         var kinds = ['open', 'save', 'addChar', 'save', 'chat', 'chat', 'mark-like', 'mark-unlike', 'chat', 'mark-stuck', 'gen-accept', 'open', 'chat'];
         for (var i = 0; i < kinds.length * 2; i++) { var t = now - (st[2] - (i / 2) * (st[2] / kinds.length)) * DAY * 0.9 - si * 3600000; ps.push(db.set('lab/u/' + st[0] + '/events/e' + i, JSON.stringify({ k: kinds[i % kinds.length], t: Math.round(t) }))); }
+        for (var gi = 0; gi < (si ? 4 : 7); gi++) ps.push(db.set('lab/u/' + st[0] + '/events/gs' + gi, JSON.stringify({ k: 'guide-show-' + gi, t: Math.round(now - (si ? 3 : 8) * DAY + gi * 1800000 * (gi + 1)) })));
+        if (!si) { ps.push(db.set('lab/u/' + st[0] + '/events/gdone', JSON.stringify({ k: 'guide-done', t: Math.round(now - 7 * DAY + 20 * 3600000) }))); ps.push(db.set('lab/u/' + st[0] + '/events/gsk', JSON.stringify({ k: 'guide-skip-2', t: Math.round(now - 8 * DAY + 3 * 3600000) }))); }
         ps.push(db.set('lab/spend/' + st[0], { ntd: si ? 12.3 : 87.6, capNtd: 1000, calls: si ? 40 : 210, tokIn: 90000, tokOut: 12000, updatedAt: now })); });
       for (var d = 0; d < 9; d++) { var dt = new Date(now - d * DAY), k = dt.getFullYear() + '-' + String(dt.getMonth() + 1).padStart(2, '0') + '-' + String(dt.getDate()).padStart(2, '0'); ps.push(db.set('lab/usage/' + k, { 'lab-demo1': { turns: 5 + (d * 7) % 23, tokIn: 8000, tokOut: 900, ntd: 3 + (d * 5) % 11 }, 'lab-demo2': { turns: (d * 3) % 9, tokIn: 2000, tokOut: 300, ntd: (d * 2) % 4 } })); }
       return Promise.all(ps); });
@@ -104,7 +108,7 @@
     codes.forEach(function (code) { var c = { open: 0, edit: 0, chat: 0, like: 0, unlike: 0, stuck: 0, acc: 0, rej: 0, tpl: 0, exp: 0, rev: 0 }, last = 0;
       Object.keys((u[code] || {}).events || {}).forEach(function (k) { var e = J(u[code].events[k]); if (!e || !e.t || e.t < t0) return; last = Math.max(last, e.t);
         if (e.k === 'open') c.open++; else if (e.k === 'chat') c.chat++; else if (e.k === 'mark-like') c.like++; else if (e.k === 'mark-unlike') c.unlike++; else if (e.k === 'mark-stuck') c.stuck++;
-        else if (e.k === 'gen-accept') c.acc++; else if (e.k === 'gen-reject') c.rej++; else if (e.k === 'gen-revise') c.rev++; else if (/^template-/.test(e.k)) c.tpl++; else if (e.k === 'export') c.exp++; else c.edit++; });
+        else if (e.k === 'gen-accept') c.acc++; else if (e.k === 'gen-reject') c.rej++; else if (e.k === 'gen-revise') c.rev++; else if (/^template-/.test(e.k)) c.tpl++; else if (e.k === 'export') c.exp++; else if (/^guide-/.test(e.k)) { } else c.edit++; });
       var parts = []; if (c.open) parts.push('開啟 ' + c.open + ' 次'); if (c.tpl) parts.push('套用範例'); if (c.edit) parts.push('編輯 ' + c.edit + ' 次'); if (c.chat) parts.push('試聊 ' + c.chat + ' 句');
       var mk = c.like + c.unlike + c.stuck; if (mk) parts.push('標註 ' + mk + ' 個（像 ' + c.like + '／不像 ' + c.unlike + '／卡住 ' + c.stuck + '）'); if (c.acc || c.rej) parts.push('進化接受 ' + c.acc + '／退回 ' + c.rej); if (c.rev) parts.push('要求調整進化 ' + c.rev + ' 次'); if (c.exp) parts.push('匯出');
       var li = document.createElement('li'); li.textContent = code + '：' + (parts.length ? '今天' + parts.join('、') + '，最後動作 ' + new Date(last).toLocaleTimeString('zh-TW', { hour: '2-digit', minute: '2-digit' }) + '。' : '今天還沒有動作。'); ul.appendChild(li); });
@@ -117,7 +121,7 @@
     var box = $('wkBox'); box.innerHTML = ''; var DAY = 86400000, d0 = new Date(); d0.setHours(0, 0, 0, 0); var codes = Object.keys(u);
     if (!codes.length) { box.textContent = '還沒有學生資料。'; return; }
     codes.forEach(function (code) {
-      var evs = Object.keys((u[code] || {}).events || {}).map(function (k) { return J(u[code].events[k]); }).filter(function (e) { return e && e.t; }).sort(function (a, b) { return a.t - b.t; });
+      var evs = Object.keys((u[code] || {}).events || {}).map(function (k) { return J(u[code].events[k]); }).filter(function (e) { return e && e.t && !/^guide-/.test(e.k); }).sort(function (a, b) { return a.t - b.t; });
       var h = document.createElement('h3'); h.textContent = code; h.style.margin = '10px 0 4px'; box.appendChild(h);
       var tb = document.createElement('table'), body = document.createElement('tbody');
       for (var i = 0; i < 7; i++) { var s0 = d0.getTime() - i * DAY, s1 = s0 + DAY, day = evs.filter(function (e) { return e.t >= s0 && e.t < s1; }), tr = document.createElement('tr');
@@ -132,10 +136,35 @@
       box.appendChild(ms); });
   }
 
+
+  var GNAMES = ['替角色取名字', '簡介與說話方式', '性格座標', '場景與房間', '故事高概念', '試聊一句', '標註一個'];
+  function renderGuideStats(u) {
+    var codes = Object.keys(u), N = GNAMES.length, st = GNAMES.map(function () { return { reach: 0, pass: 0, skip: 0, go: 0, dur: [] }; }), done = 0, off = 0, stuck = [], lines = [], now = Date.now();
+    codes.forEach(function (code) {
+      var evs = Object.keys((u[code] || {}).events || {}).map(function (k) { return J(u[code].events[k]); }).filter(function (e) { return e && e.t && /^guide-/.test(e.k); }).sort(function (x, y) { return x.t - y.t; });
+      var show = {}, skip = {}, go = {}, fin = null, isOff = false;
+      evs.forEach(function (e) { var m = /^guide-(show|skip|go|off|done)(?:-(\d+))?$/.exec(e.k); if (!m) return; var i = m[2] === undefined ? -1 : Number(m[2]);
+        if (m[1] === 'show' && show[i] === undefined) show[i] = e.t; else if (m[1] === 'skip') skip[i] = e.t; else if (m[1] === 'go') go[i] = 1; else if (m[1] === 'off') isOff = true; else if (m[1] === 'done' && !fin) fin = e.t; });
+      if (!evs.length) { lines.push(code + '：還沒有引導紀錄。'); return; }
+      var cur = -1;
+      for (var i = 0; i < N; i++) { if (show[i] !== undefined) { st[i].reach++; if (skip[i] !== undefined) st[i].skip++; if (go[i]) st[i].go++;
+          var later = Object.keys(show).map(Number).filter(function (j) { return j > i; }).map(function (j) { return show[j]; }), nxt = later.length ? Math.min.apply(null, later) : (fin || null);
+          if (nxt) { st[i].pass++; st[i].dur.push(nxt - show[i]); } else cur = i; } }
+      if (fin) { done++; lines.push(code + '：引導完成（' + new Date(fin).toLocaleString('zh-TW', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' }) + '）。'); }
+      else if (isOff) { off++; lines.push(code + '：全部跳過（停在第 ' + (cur + 1) + ' 步前後）。'); }
+      else if (cur >= 0) { var mins = Math.round((now - show[cur]) / 60000), isStuck = mins >= 30; if (isStuck) stuck.push(code); lines.push(code + '：目前在第 ' + (cur + 1) + ' 步「' + GNAMES[cur] + '」，已停 ' + (mins >= 120 ? Math.round(mins / 60) + ' 小時' : mins + ' 分') + (isStuck ? ' ⚠ 卡關' : '') + '。'); }
+    });
+    $('gdSum').textContent = codes.length ? ('完成 ' + done + ' ／ 全部跳過 ' + off + ' ／ 進行中 ' + (codes.length - done - off) + '（共 ' + codes.length + ' 位）；完成率 ' + Math.round(done / codes.length * 100) + '%' + (stuck.length ? '；卡關：' + stuck.join('、') : '')) : '還沒有學生資料。';
+    var body = $('gdBody'); body.innerHTML = '';
+    st.forEach(function (x, i) { var tr = document.createElement('tr'), avg = x.dur.length ? Math.round(x.dur.reduce(function (p, c) { return p + c; }, 0) / x.dur.length / 60000) : null;
+      [(i + 1) + '. ' + GNAMES[i], String(x.reach), String(x.pass), String(x.skip), String(x.go), avg === null ? '—' : (avg >= 120 ? Math.round(avg / 60) + ' 小時' : avg + ' 分')].forEach(function (t) { tr.appendChild(td(t)); }); body.appendChild(tr); });
+    var ul = $('gdStu'); ul.innerHTML = ''; lines.forEach(function (t) { var li = document.createElement('li'); li.textContent = t; ul.appendChild(li); });
+  }
+
   function load() {
     Promise.all([ctx.db.get('lab/_wl'), ctx.db.get('lab/u'), ctx.db.get('lab/usage'), ctx.db.get('lab/spend')]).then(function (r) {
       var wl = r[0] || {}, u = r[1] || {}, use = r[2] || {}, spend = r[3] || {};
-      renderToday(u); renderWeek(u); renderTimeline(u); renderChart(use);
+      renderToday(u); renderGuideStats(u); renderWeek(u); renderTimeline(u); renderChart(use);
       var spb = $('spBody'); spb.innerHTML = ''; var codes = {}; Object.keys(wl).forEach(function (k) { codes[wl[k]] = 1; }); Object.keys(spend).forEach(function (k) { codes[k] = 1; });
       Object.keys(codes).forEach(function (code) { var x = spend[code] || {}, used = Number(x.ntd) || 0, cap = (x.capNtd === undefined) ? 1000 : Number(x.capNtd), tr = document.createElement('tr');
         var inp = document.createElement('input'); inp.type = 'number'; inp.min = '0'; inp.step = '100'; inp.value = cap; inp.style.width = '110px'; inp.setAttribute('aria-label', code + ' 新上限');

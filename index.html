@@ -90,15 +90,18 @@
     ['chat', '到「試聊」跟你的角色說一句話', function () { return FL.chat > 0; }],
     ['chat', '在角色的回覆下面標「像」「不像」或「卡住」', function () { return FL.mark > 0; }]
   ];
+  var GSEEN = {};
+  function glog(kind, i) { var key = kind + i; if (GSEEN[key]) return; GSEEN[key] = 1; var lk = gk('l.' + key); if (lsGet(lk)) return; lsSet(lk, '1'); ev('guide-' + kind + (i === '' ? '' : '-' + i)); }   /* 每個引導事件每台裝置只記一次 */
   function renderGuide() {
     var g = $('guide'); if (!g) return; g.innerHTML = ''; if (!ctx || !P || lsGet(gk('off')) === '1') return;
     var skip = []; try { skip = JSON.parse(lsGet(gk('skip')) || '[]'); } catch (e) {}
     var i = -1; for (var k = 0; k < GSTEPS.length; k++) { if (!GSTEPS[k][2]() && skip.indexOf(k) < 0) { i = k; break; } }
-    if (i < 0) return;
+    if (i < 0) { glog('done', ''); return; }
+    glog('show', i);
     var go = el('button', { text: '帶我去' }), sk = el('button', { class: 'ghost', text: '跳過這步' }), off = el('button', { class: 'ghost', text: '全部跳過' });
-    go.onclick = function () { tab = GSTEPS[i][0]; renderTabs(); renderPane(); };
-    sk.onclick = function () { skip.push(i); lsSet(gk('skip'), JSON.stringify(skip)); renderGuide(); };
-    off.onclick = function () { lsSet(gk('off'), '1'); renderGuide(); };
+    go.onclick = function () { ev('guide-go-' + i); tab = GSTEPS[i][0]; renderTabs(); renderPane(); };
+    sk.onclick = function () { ev('guide-skip-' + i); skip.push(i); lsSet(gk('skip'), JSON.stringify(skip)); renderGuide(); };
+    off.onclick = function () { ev('guide-off-' + i); lsSet(gk('off'), '1'); renderGuide(); };
     g.appendChild(el('div', { class: 'card', style: 'margin-bottom:12px' }, [el('span', { class: 'tag', text: '新手引導　第 ' + (i + 1) + ' / ' + GSTEPS.length + ' 步' }), el('p', { text: GSTEPS[i][1], style: 'font-weight:700;margin:8px 0' }), el('div', { class: 'row' }, [go, sk, off])]));
   }
 
