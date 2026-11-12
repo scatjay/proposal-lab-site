@@ -65,9 +65,9 @@
   function lines(a) { return (a || []).join('\n'); } function unlines(s) { return s.split('\n').map(function (x) { return x.trim(); }).filter(Boolean); }
 
   /* 分頁 */
-  var TABS = [['home', '你在這裡'], ['chars', '角色'], ['scenes', '場景'], ['story', '故事'], ['chat', '試聊'], ['evo', '進化'], ['demo', 'Demo'], ['set', '設定']];
+  var TABS = [['home', '你在這裡'], ['chars', '角色'], ['scenes', '場景'], ['story', '故事'], ['chat', '試聊'], ['evo', '進化'], ['demo', 'Demo'], ['set', '設定'], ['dash', '我的後台']];
   function renderTabs() { var t = $('tabs'); t.innerHTML = ''; TABS.forEach(function (x) { var b = el('button', { text: x[1], class: x[0] === tab ? 'on' : 'ghost' }); b.onclick = function () { tab = x[0]; renderTabs(); renderPane(); }; t.appendChild(b); }); }
-  function renderPane() { var p = $('pane'); p.innerHTML = ''; ({ home: pHome, chars: pChars, scenes: pScenes, story: pStory, chat: pChat, evo: pEvo, demo: pDemo, set: pSet })[tab](p); renderGuide(); }
+  function renderPane() { var p = $('pane'); p.innerHTML = ''; ({ home: pHome, chars: pChars, scenes: pScenes, story: pStory, chat: pChat, evo: pEvo, demo: pDemo, set: pSet, dash: pDash })[tab](p); renderGuide(); }
 
   function checks() { var c = P.chars, st = P.story, out = [];
     out.push([c.length >= 1, '至少一個角色']);
@@ -375,6 +375,45 @@
       body.appendChild(el('div', { class: 'muted', text: x.updatedAt ? '記帳更新：' + new Date(x.updatedAt).toLocaleString('zh-TW') : '還沒有任何花費紀錄。' }));
       body.appendChild(el('p', { class: 'muted', text: '這是整個實驗期間的累積上限。需要增加，請向楊老師提出。' }));
     }).catch(function (e) { body.textContent = '讀不到花費資料：' + (e && e.code || e); });
+  }
+
+  /* 我的後台：只讀自己 lab/u/<代碼>/ 與自己的 lab/spend/<代碼>，不碰別人、不能改上限 */
+  function pDash(p) {
+    var wrap = el('div', {}, [el('p', { class: 'muted', text: '讀取你的後台資料…' })]); p.appendChild(wrap);
+    Promise.all([ctx.db.get('lab/spend/' + ctx.code), ctx.db.get(path('req')), ctx.db.get(path('out')), ctx.db.get(path('marks')), ctx.db.get(path('gens')), ctx.db.get(path('events'))]).then(function (r) {
+      if (tab !== 'dash') return; wrap.innerHTML = '';
+      var sp = r[0] || {}, reqs = r[1] || {}, outs = r[2] || {}, marks = r[3] || {}, gens = r[4] || {}, evs = r[5] || {};
+      var used = Number(sp.ntd) || 0, cap = (sp.capNtd === undefined || sp.capNtd === null) ? DEFAULT_CAP : Number(sp.capNtd), left = Math.max(0, cap - used);
+      function dkey(t) { var d = new Date(t); return d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2); }
+      var today = dkey(Date.now()), days = [], i; for (i = 0; i < 7; i++) days.push(dkey(Date.now() - i * 86400000));
+      var byDay = {}; days.forEach(function (d) { byDay[d] = { chat: 0, mark: 0, ev: 0 }; });
+      var reqList = Object.keys(reqs).map(function (k) { var q = J(reqs[k]) || {}; q._id = k; return q; }).sort(function (a, b) { return (b.t || 0) - (a.t || 0); });
+      reqList.forEach(function (q) { var d = dkey(q.t || 0); if (byDay[d] && !q.g) byDay[d].chat++; });
+      Object.keys(marks).forEach(function (k) { var m = J(marks[k]) || {}, d = dkey(m.t || 0); if (byDay[d]) byDay[d].mark++; });
+      Object.keys(evs).forEach(function (k) { var e = J(evs[k]) || {}, d = dkey(e.t || 0); if (byDay[d]) byDay[d].ev++; });
+      /* 1 額度與型號 */
+      var c1 = el('div', { class: 'card' }); c1.appendChild(el('h2', { text: '額度與型號' }));
+      c1.appendChild(el('div', { class: 'row' }, [el('strong', { text: '剩 NT$ ' + fmt(left), style: 'font-size:20px' }), el('span', { class: 'muted', text: '已用 NT$ ' + fmt(used) + ' ／ 上限 NT$ ' + fmt(cap) })]));
+      c1.appendChild(el('div', { class: 'muted', text: '目前型號：' + (S.model || MODELS[0]) + '（到「設定」可以換）　場上對話累計 ' + fmt(sp.calls || 0) + ' 次' }));
+      c1.appendChild(el('div', { class: 'muted', text: '今天你送出 ' + byDay[today].chat + ' 句試聊。上限只有楊老師能改。' })); wrap.appendChild(c1);
+      /* 2 近 7 天 */
+      var c2 = el('div', { class: 'card' }); c2.appendChild(el('h2', { text: '最近 7 天' }));
+      var tb = el('table', { style: 'width:100%;border-collapse:collapse' }); tb.appendChild(el('tr', {}, ['日期', '試聊句數', '標註數', '操作次數'].map(function (h) { return el('th', { text: h, style: 'text-align:left;padding:4px' }); })));
+      days.forEach(function (d) { var b = byDay[d]; tb.appendChild(el('tr', {}, [d + (d === today ? '（今天）' : ''), b.chat, b.mark, b.ev].map(function (v) { return el('td', { text: String(v), style: 'padding:4px;border-top:1px solid var(--ink)' }); }))); });
+      c2.appendChild(tb); wrap.appendChild(c2);
+      /* 3 進化摘要 */
+      var gl = gensList(), cnt = { candidate: 0, accepted: 0, rejected: 0, superseded: 0 }; gl.forEach(function (g) { if (cnt[g.v] !== undefined) cnt[g.v]++; });
+      var c3 = el('div', { class: 'card' }); c3.appendChild(el('h2', { text: '進化紀錄' }));
+      c3.appendChild(el('p', { text: '共 ' + gl.length + ' 代：等你決定 ' + cnt.candidate + '、你接受 ' + cnt.accepted + '、你退回 ' + cnt.rejected + '、已被取代 ' + cnt.superseded + '。細節在「進化」分頁。' })); wrap.appendChild(c3);
+      /* 4 最近對話 */
+      var c4 = el('div', { class: 'card' }); c4.appendChild(el('h2', { text: '最近 10 筆對話' }));
+      var recent = reqList.filter(function (q) { return !q.g; }).slice(0, 10);
+      if (!recent.length) c4.appendChild(el('p', { class: 'muted', text: '還沒有對話。到「試聊」跟角色說幾句話。' }));
+      recent.forEach(function (q) { var ou = J(outs[q._id]), ch = (P.chars[Number(q.c || 0)] || {}).name || ('角色 ' + (Number(q.c || 0) + 1));
+        c4.appendChild(el('div', { style: 'margin:8px 0' }, [el('div', { class: 'muted', text: (q.t ? new Date(q.t).toLocaleString('zh-TW') : '') + '　' + ch }), el('div', { text: '你：' + (q.m || '') }),
+          el('div', { class: 'muted', text: ou ? (ou.err ? '（這次沒有回成功）' : (ch + '：' + (ou.text || ''))) : '（還在等回覆）' })])); });
+      wrap.appendChild(c4);
+    }).catch(function (e) { wrap.textContent = '讀不到後台資料：' + (e && e.code || e); });
   }
   function fmt(n) { n = Number(n) || 0; return n.toLocaleString('zh-TW', { maximumFractionDigits: 2 }); }
 
