@@ -40,7 +40,7 @@
 
   <div class="card"><h2>用量圖</h2><p class="muted">每天場上角色對話次數（長條）與當天花費（數字）。</p><div id="chartBox"></div></div>
 
-  <div class="card"><h2>花費與上限（台幣，累積）</h2><p class="muted">上限預設 1,000 元；學生只能看、不能改。要增加由你在這裡改，儲存後學生的設定頁立刻看到。代理程式要在每次呼叫前讀這裡的 <code>capNtd</code>，用完就暫停該生的場上角色。</p>
+  <div class="card"><h2>花費與上限（台幣，累積）</h2><p class="muted">上限預設 100 元；學生只能看、不能改。要增加由你在這裡改，儲存後學生的設定頁立刻看到。代理程式要在每次呼叫前讀這裡的 <code>capNtd</code>，用完就暫停該生的場上角色。</p>
     <div class="tbl"><table><thead><tr><th>代碼</th><th>已花</th><th>上限</th><th>比例</th><th>改上限</th></tr></thead><tbody id="spBody"></tbody></table></div><div class="muted" id="spMsg"></div></div>
 
   <div class="card"><h2>用量（NPC 對話）</h2><p class="muted">由代理程式寫入 <code>lab/usage</code>。還沒接上時這裡是空的。</p><div class="tbl"><table><thead><tr><th>日期</th><th>代碼</th><th>次數</th><th>token（入／出）</th></tr></thead><tbody id="useBody"></tbody></table></div></div>
@@ -193,7 +193,7 @@
       var wl = r[0] || {}, u = r[1] || {}, use = r[2] || {}, spend = r[3] || {}, rate = r[4] || {};
       renderToday(u); renderMetrics(u, spend, rate); renderGuideStats(u); renderWeek(u); renderTimeline(u); renderChart(use);
       var spb = $('spBody'); spb.innerHTML = ''; var codes = {}; Object.keys(wl).forEach(function (k) { codes[wl[k]] = 1; }); Object.keys(spend).forEach(function (k) { codes[k] = 1; });
-      Object.keys(codes).forEach(function (code) { var x = spend[code] || {}, used = Number(x.ntd) || 0, cap = (x.capNtd === undefined) ? 1000 : Number(x.capNtd), tr = document.createElement('tr');
+      Object.keys(codes).forEach(function (code) { var x = spend[code] || {}, used = Number(x.ntd) || 0, cap = (x.capNtd === undefined) ? 100 : Number(x.capNtd), tr = document.createElement('tr');
         var inp = document.createElement('input'); inp.type = 'number'; inp.min = '0'; inp.step = '100'; inp.value = cap; inp.style.width = '110px'; inp.setAttribute('aria-label', code + ' 新上限');
         var sv = document.createElement('button'); sv.textContent = '儲存'; sv.onclick = function () { var v = Number(inp.value); if (!(v >= 0) || v > 1000000) { $('spMsg').textContent = '上限要是 0 到 1,000,000 的數字'; return; }
           ctx.db.set('lab/spend/' + code + '/capNtd', v).then(function () { $('spMsg').textContent = code + ' 上限已改為 NT$ ' + v; load(); }).catch(function (e) { $('spMsg').textContent = '儲存失敗：' + (e && e.code || e); }); };

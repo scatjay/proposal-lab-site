@@ -43,7 +43,7 @@
   var $ = function (i) { return document.getElementById(i); };
   var MODELS = ['gemini-2.5-flash-lite', 'gemini-3.1-flash-lite', 'gemini-3-flash-preview'];   /* 實際可用型號由楊老師的代理程式再限制一次 */
   var JARVIS_ON = false;   /* Jarvis（學生自己的 Claude CLI 助理）等楊老師交付 Pro 帳號後才開：改 true 即恢復取名、接手與設定欄位 */
-  var DEFAULT_CAP = 1000;   /* 台幣，整個實驗期間累積；增加要楊老師核准（寫入 lab/spend/<代碼>/capNtd） */
+  var DEFAULT_CAP = 100;   /* 台幣，整個實驗期間累積；增加要楊老師核准（寫入 lab/spend/<代碼>/capNtd） */
   var ctx, P, S, G = {}, tab = 'home', timer = null;
   function show(id) { ['login', 'denied', 'naming', 'app', 'fatal'].forEach(function (k) { $(k).hidden = (k !== id); }); }
   function el(tag, attrs, kids) { var e = document.createElement(tag); Object.keys(attrs || {}).forEach(function (k) { if (k === 'text') e.textContent = attrs[k]; else if (k === 'class') e.className = attrs[k]; else e.setAttribute(k, attrs[k]); }); (kids || []).forEach(function (c) { e.appendChild(c); }); return e; }
